@@ -4,9 +4,8 @@ import com.agui.community.koog.AgUiEvent
 import com.agui.community.koog.AgUiJson
 import com.agui.community.koog.KoogAgUiAgent
 import com.agui.community.koog.RunAgentInput
-import com.agui.community.koog.RunErrorCodes
-import com.agui.community.koog.RunErrorEvent
 import com.agui.community.koog.SseEncoder
+import com.agui.community.koog.toRunErrorEvent
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
@@ -21,6 +20,7 @@ import io.ktor.http.CacheControl
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.io.IOException
 
 /**
  * Exposes an AG-UI endpoint: `POST path` with a `RunAgentInput` JSON body, answered with a
@@ -52,8 +52,11 @@ public fun Route.agUiEvents(path: String, events: suspend ApplicationCall.(RunAg
                 }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: IOException) {
+                // Client disconnected: nothing left to write to.
             } catch (e: Throwable) {
-                writeStringUtf8(SseEncoder.encode(RunErrorEvent(e.message ?: "Agent run failed", RunErrorCodes.AGENT_ERROR)))
+                // Event sources other than KoogAgUiAgent may fail without emitting RUN_ERROR themselves.
+                writeStringUtf8(SseEncoder.encode(e.toRunErrorEvent()))
                 flush()
             }
         }

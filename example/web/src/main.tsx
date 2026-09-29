@@ -114,7 +114,9 @@ function App() {
 
   const toolResults = useMemo(() => {
     const map = new Map<string, string>();
-    messages.forEach((m) => m.role === "tool" && typeof m.content === "string" && map.set(m.toolCallId, m.content));
+    for (const m of messages) {
+      if (m.role === "tool" && typeof m.content === "string") map.set(m.toolCallId, m.content);
+    }
     return map;
   }, [messages]);
 

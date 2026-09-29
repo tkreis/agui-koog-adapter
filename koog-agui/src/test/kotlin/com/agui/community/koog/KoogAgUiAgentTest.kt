@@ -180,6 +180,17 @@ class KoogAgUiAgentTest {
     }
 
     @Test
+    fun `a client tool named update_state is a normal frontend tool when state sharing is off`() = runTest {
+        val clientTool = AgUiTool("update_state", "client-side state tool")
+        val executor = ScriptedExecutor(toolTurn("u1", "update_state", "{}"))
+        val events = agent(executor).run(input(UserMessage("m", "x"), tools = listOf(clientTool))).toList()
+
+        assertValidAgUiSequence(events)
+        assertTrue(executor.tools.single().any { it.name == "update_state" })
+        assertEquals(RunOutcome.Success(listOf("u1")), (events.last() as RunFinishedEvent).outcome)
+    }
+
+    @Test
     fun `context is passed to the model`() = runTest {
         val executor = ScriptedExecutor(textTurn("Hi Alex"))
         agent(executor).run(

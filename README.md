@@ -71,4 +71,4 @@ Optional environment variables:
 - the wire format,
 - SSE framing through Ktor.
 
-`vendor/` has clones of `ag-ui` and `koog` that were used as reference. The build does not use them.
+During development, the upstream `ag-ui` and `koog` repositories were cloned into a git-ignored `vendor/` folder for reference. The build does not need them.

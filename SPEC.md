@@ -1,6 +1,6 @@
 # Spec: AG-UI protocol support for Koog
 
-Status: v1 implemented in this repository (`koog-agui`, `koog-agui-ktor`, `example/`). Verified 2026-09-29: 23 unit tests green; live e2e (5 scenarios, gpt-4.1-mini) green through `@ag-ui/client` 1.0.0 verifier; browser rendering checked.
+Status: v1 implemented in this repository (`koog-agui`, `koog-agui-ktor`, `example/`). Verified 2026-09-29: 25 unit tests green; live e2e (5 scenarios, gpt-4.1-mini) green through `@ag-ui/client` 1.0.0 verifier; browser rendering checked.
 Targets: AG-UI protocol **1.0** (`@ag-ui/client` 1.0.0), Koog **1.3.0**, Kotlin 2.3, JVM 21.
 
 ## 1. Goal
@@ -85,21 +85,22 @@ Spring AI adapter disables Spring AI's tool execution.
 |---|---|
 | `system`, `developer` | `Message.System` |
 | `user` (string) | `Message.User(content)` |
-| `user` (parts) | `Message.User` with `MessagePart.Text` for text parts; binary parts → text placeholder `[<type> attachment omitted]` (v1) |
+| `user` (parts) | `Message.User` with one `MessagePart.Text` per part; binary parts → text placeholder `[<type> attachment omitted]` (v1) |
 | `assistant` | `Message.Assistant(parts = [Text?] + Tool.Call(id, name, arguments)*)` |
 | consecutive `tool` messages | one `Message.User` with `MessagePart.Tool.Result(id, toolName, content, isError = error != null)` per message; tool name is looked up from the preceding assistant tool call |
 | `reasoning`, `activity`, unknown roles | dropped (decoded leniently, never fail the run) |
 
 Server-side preamble, in this order: configured system prompt, then (if `context` non-empty) a system message
 listing `description: value` pairs, then (if state sharing is on and state present) a system message with the
-current state JSON and the `update_state` instructions.
+current state JSON (`{}` if the client sent none) and the `update_state` instructions.
 
 Frontend tool descriptors are advertised on every LLM request so Koog's `MissingToolsConversionStrategy` does not
 flatten historic frontend tool calls into plain text.
 
 ### 4.2 Event translation (Koog frames → AG-UI)
 
-One `AgUiStreamTranslator` per LLM turn, one fresh assistant `messageId` per turn.
+One `AgUiStreamTranslator` per LLM turn, one fresh assistant `messageId` per turn. A second text segment in the same turn
+(text after a tool call) gets `<messageId>-N`, because the verifier forbids reusing a closed message id.
 
 | Frame | Events |
 |---|---|
@@ -121,7 +122,7 @@ repeat (maxTurns):
     append assistant message to Koog prompt
     calls = tool calls of this turn
     if calls empty → break
-    handle update_state → STATE_SNAPSHOT, tool result "ok" appended
+    handle update_state → STATE_SNAPSHOT, tool result "State updated." appended
     frontend calls present → break (pending)
     execute backend calls → TOOL_CALL_RESULT(messageId, toolCallId, content), results appended
 RUN_FINISHED(threadId, runId, outcome = {type:"success", pendingToolCallIds?})
@@ -149,17 +150,17 @@ val agent = KoogAgUiAgent(
     model = OpenAIModels.Chat.GPT4_1Mini,
     toolRegistry = ToolRegistry { tool(GetWeatherTool) },   // backend tools
     systemPrompt = "You are a helpful assistant.",
-    config = AgUiAgentConfig(shareState = true, maxTurns = 10),
+    config = AgUiAgentConfig(shareState = true, maxTurns = 10),   // also: stateToolName, statePrompt, includeContext
     installFeatures = { /* any Koog feature */ },
 )
 val events: Flow<AgUiEvent> = agent.run(input: RunAgentInput)
 ```
 
-- `AgUiJson`: the kotlinx `Json` instance (lenient decode, `explicitNulls = false`, `type` / `role` discriminators).
+- `AgUiJson`: the kotlinx `Json` instance (unknown keys ignored, `explicitNulls = false`, `type` / `role` discriminators).
 - `AgUiEvent` sealed hierarchy + `RunAgentInput`, `AgUiMessage`, `AgUiTool` wire model (own, lean, lenient
   decoding; the community Kotlin SDK `kotlin-core` 0.4.1 was evaluated and rejected because it lags spec 1.0:
   it fails to decode `reasoning` messages and tools without `parameters`, and rejects empty text deltas).
-- `SseEncoder.encode(event): String` → `data: <json>\n\n`.
+- `SseEncoder.encode(event): String` → `data: <json>\n\n`; `Throwable.toRunErrorEvent()` for terminal errors.
 - Building blocks are public for custom strategies: `toKoogMessages()`, `JsonSchemaToolDescriptors`,
   `AgUiStreamTranslator`.
 

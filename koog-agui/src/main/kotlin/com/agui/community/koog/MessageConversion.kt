@@ -9,7 +9,7 @@ import ai.koog.prompt.message.ResponseMetaInfo
  * Converts AG-UI conversation history into Koog messages.
  *
  * - `system` / `developer` → [Message.System]
- * - `user` → [Message.User] (text parts only; other parts become placeholders)
+ * - `user` → [Message.User] with one [MessagePart.Text] per content part (non-text parts become placeholders)
  * - `assistant` → [Message.Assistant] with optional text and [MessagePart.Tool.Call]s
  * - consecutive `tool` messages → one [Message.User] holding [MessagePart.Tool.Result]s
  * - other roles are dropped
@@ -31,7 +31,7 @@ public fun List<AgUiMessage>.toKoogMessages(): List<Message> {
         when (message) {
             is SystemMessage -> result += Message.System(message.content, RequestMetaInfo.Empty, id = message.id)
             is DeveloperMessage -> result += Message.System(message.content, RequestMetaInfo.Empty, id = message.id)
-            is UserMessage -> result += Message.User(message.textContent(), RequestMetaInfo.Empty, id = message.id)
+            is UserMessage -> result += Message.User(message.textParts().map { MessagePart.Text(it) }, RequestMetaInfo.Empty, id = message.id)
             is AssistantMessage -> {
                 val parts = buildList<MessagePart.ResponsePart> {
                     message.content?.takeIf { it.isNotEmpty() }?.let { add(MessagePart.Text(it)) }

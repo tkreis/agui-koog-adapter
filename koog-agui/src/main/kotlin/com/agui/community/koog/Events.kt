@@ -136,11 +136,3 @@ public data class ToolCallResultEvent(
 @Serializable
 @SerialName("STATE_SNAPSHOT")
 public data class StateSnapshotEvent(val snapshot: JsonElement) : AgUiEvent
-
-/** Server-Sent Events framing expected by `@ag-ui/client`: one `data:` line per event, LF only. */
-public object SseEncoder {
-    public const val CONTENT_TYPE: String = "text/event-stream"
-
-    public fun encode(event: AgUiEvent): String =
-        "data: " + AgUiJson.encodeToString(AgUiEvent.serializer(), event) + "\n\n"
-}

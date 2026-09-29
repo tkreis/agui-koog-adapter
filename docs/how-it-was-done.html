@@ -50,18 +50,18 @@
 
   <div class="grid stats">
     <div class="card stat"><b>37</b><span>files created (32 written by hand, plus the Gradle wrapper and the pnpm lockfile)</span></div>
-    <div class="card stat"><b>956</b><span>library lines in 7 files (<code>koog-agui</code> + <code>koog-agui-ktor</code>)</span></div>
-    <div class="card stat"><b>23</b><span>unit tests, no network needed, all green</span></div>
+    <div class="card stat"><b>967</b><span>library lines in 8 files (<code>koog-agui</code> + <code>koog-agui-ktor</code>)</span></div>
+    <div class="card stat"><b>25</b><span>unit tests, no network needed, all green</span></div>
     <div class="card stat"><b>5 / 5</b><span>live scenarios pass with OpenAI through the official <code>@ag-ui/client</code> verifier</span></div>
   </div>
 
   <h2>Files</h2>
   <table>
     <tr><th>Area</th><th>Files</th><th class="num">Lines</th></tr>
-    <tr><td><b>Library</b> <code>koog-agui</code></td><td><code>KoogAgUiAgent.kt</code> (run loop), <code>AgUiStreamTranslator.kt</code> (frames to events), <code>Events.kt</code>, <code>Types.kt</code> (wire model), <code>MessageConversion.kt</code>, <code>JsonSchemaToolDescriptors.kt</code></td><td class="num">875</td></tr>
-    <tr><td><b>Library</b> <code>koog-agui-ktor</code></td><td><code>AgUiRouting.kt</code>: <code>Route.agUi(path) { agent }</code></td><td class="num">59</td></tr>
-    <tr><td><b>Tests</b></td><td><code>KoogAgUiAgentTest</code>, <code>WireAndTranslatorTest</code>, <code>TestSupport</code> (scripted LLM, Kotlin port of the verifier rules), <code>AgUiRoutingTest</code></td><td class="num">571</td></tr>
-    <tr><td><b>Example</b></td><td><code>example/server/Main.kt</code> (Ktor + OpenAI), <code>example/web</code> (React on <code>@ag-ui/client</code>), <code>scripts/e2e.ts</code></td><td class="num">562</td></tr>
+    <tr><td><b>Library</b> <code>koog-agui</code></td><td><code>KoogAgUiAgent.kt</code> (run loop), <code>AgUiStreamTranslator.kt</code> (frames to events), <code>Events.kt</code>, <code>Types.kt</code> (wire model), <code>SseEncoder.kt</code>, <code>MessageConversion.kt</code>, <code>JsonSchemaToolDescriptors.kt</code></td><td class="num">904</td></tr>
+    <tr><td><b>Library</b> <code>koog-agui-ktor</code></td><td><code>AgUiRouting.kt</code>: <code>Route.agUi(path) { agent }</code></td><td class="num">63</td></tr>
+    <tr><td><b>Tests</b></td><td><code>KoogAgUiAgentTest</code>, <code>WireAndTranslatorTest</code>, <code>TestSupport</code> (scripted LLM, Kotlin port of the verifier rules), <code>AgUiRoutingTest</code></td><td class="num">642</td></tr>
+    <tr><td><b>Example</b></td><td><code>example/server/Main.kt</code> (Ktor + OpenAI), <code>example/web</code> (React on <code>@ag-ui/client</code>), <code>scripts/e2e.ts</code></td><td class="num">561</td></tr>
     <tr><td><b>Docs</b></td><td><code>SPEC.md</code>, <code>README.md</code>, this page</td><td class="num">≈ 280</td></tr>
     <tr><td><b>Build</b></td><td><code>settings.gradle.kts</code>, <code>build.gradle.kts</code>, 3 module builds, <code>libs.versions.toml</code>, Vite/TS config, <code>.gitignore</code></td><td class="num">≈ 150</td></tr>
   </table>
@@ -127,10 +127,10 @@
   <div class="card">
     <ul class="clean">
       <li><span class="tag t-trim">trim</span>Removed unused events (<code>STEP_*</code>, <code>STATE_DELTA</code>, <code>MESSAGES_SNAPSHOT</code>, <code>CUSTOM</code>) and the untested <code>emitSteps</code> option. They are follow-ups in the spec.</li>
-      <li><span class="tag t-trim">trim</span><code>KoogAgUiAgent</code> went from 223 to 183 lines. Removed a <code>state</code> variable that was written but never read, the <code>config</code>/<code>agUiConfig</code> alias and the <code>ProducerScope</code> receiver trick.</li>
+      <li><span class="tag t-trim">trim</span><code>KoogAgUiAgent</code> shrank from 223 lines (it is 197 after all review rounds, which also added features). Removed a <code>state</code> variable that was written but never read, the <code>config</code>/<code>agUiConfig</code> alias and the <code>ProducerScope</code> receiver trick.</li>
       <li><span class="tag t-trim">trim</span>Translator: the two duplicated tool-call branches became <code>startCall</code> and <code>PendingCall.continuedBy</code>.</li>
       <li><span class="tag t-trim">trim</span>Ktor route: merged two catch blocks, because <code>SerializationException</code> is an <code>IllegalArgumentException</code>. Also removed redundant <code>@SerialName</code> annotations and unused imports.</li>
-      <li>Result: library code went from 1,014 to 934 lines. All 21 tests and all 5 live scenarios still pass.</li>
+      <li>Result: library code went from 1,014 to 934 lines after this pass. Later rounds added reasoning replay, error codes and fixes; it is 967 lines now.</li>
     </ul>
   </div>
 
@@ -156,10 +156,22 @@
     <li>The example client takes the agent URL as a parameter instead of sniffing <code>process</code> or <code>import.meta</code>.</li>
   </ul>
 
+  <h2>Code review before publishing</h2>
+  <p>A two-axis review (coding standards, and faithfulness to <code>SPEC.md</code>) ran on the full commit. Fixed:</p>
+  <ul class="clean">
+    <li>The default state prompt now uses the configured <code>stateToolName</code>; it no longer hardcodes <code>update_state</code>.</li>
+    <li>A client tool named <code>update_state</code> is only reserved when state sharing is on.</li>
+    <li>The Ktor route no longer tries to write <code>RUN_ERROR</code> after the client has disconnected. Error mapping is shared through <code>Throwable.toRunErrorEvent()</code>.</li>
+    <li>User content parts map to separate Koog text parts.</li>
+    <li><code>SseEncoder</code> moved to its own file, and the frontend-call list was renamed to <code>pendingFrontendCallIds</code>.</li>
+    <li>Message-conversion tests added. The spec and README now match the code.</li>
+  </ul>
+  <p>Kept on purpose: <code>system</code> and <code>developer</code> stay separate types because they are distinct protocol roles. The public constructor parameter stays <code>config</code> for API readability. The <code>outcome</code> object form was confirmed against <code>@ag-ui/client</code> 1.0.0 by the live e2e.</p>
+
   <h2>Verification</h2>
   <table>
     <tr><th>Layer</th><th>Covers</th><th>Result</th></tr>
-    <tr><td>Unit tests (<code>./gradlew build</code>)</td><td>Text streaming, the backend tool loop, frontend stop and replay, mixed turns, the state tool, context, errors, the turn cap, translator edge cases, schema conversion, the wire format and SSE framing</td><td class="ok">23 / 23</td></tr>
+    <tr><td>Unit tests (<code>./gradlew build</code>)</td><td>Text streaming, the backend tool loop, frontend stop and replay, mixed turns, the state tool, context, errors, the turn cap, translator edge cases, schema conversion, the wire format and SSE framing</td><td class="ok">25 / 25</td></tr>
     <tr><td>Live e2e (<code>pnpm e2e</code>, gpt-4.1-mini)</td><td>Streamed text, <code>get_weather</code> with its result, the <code>change_background</code> round trip, <code>generate_haiku</code>, and adding two todos through state</td><td class="ok">5 / 5</td></tr>
     <tr><td>Browser</td><td>Weather card, haiku card, sunset background, todo panel</td><td class="ok">rendered</td></tr>
   </table>

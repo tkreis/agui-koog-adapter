@@ -143,15 +143,18 @@ internal object AgUiMessageSerializer : JsonContentPolymorphicSerializer<AgUiMes
         }
 }
 
-/** Plain text of a user message; non-text content parts are replaced by a short placeholder. */
-public fun UserMessage.textContent(): String = when (val c = content) {
-    is JsonPrimitive -> c.contentOrNull.orEmpty()
-    is JsonArray -> c.joinToString("\n") { part ->
-        val obj = part as? JsonObject ?: return@joinToString part.toString()
+/** Text of each user content part; non-text parts are replaced by a short placeholder. */
+public fun UserMessage.textParts(): List<String> = when (val c = content) {
+    is JsonPrimitive -> listOf(c.contentOrNull.orEmpty())
+    is JsonArray -> c.map { part ->
+        val obj = part as? JsonObject ?: return@map part.toString()
         when (val type = obj["type"]?.jsonPrimitive?.contentOrNull) {
             "text" -> obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
             else -> "[${type ?: "unknown"} attachment omitted]"
         }
     }
-    else -> c.toString()
+    else -> listOf(c.toString())
 }
+
+/** Plain text of a user message, parts joined by newlines. */
+public fun UserMessage.textContent(): String = textParts().joinToString("\n")

@@ -31,17 +31,17 @@ public data class AgUiAgentConfig(
     /** Expose `input.state` to the model and let it replace the state with the [stateToolName] tool. */
     val shareState: Boolean = false,
     val stateToolName: String = "update_state",
-    /** Instructions appended after the state JSON in the system message. */
-    val statePrompt: String = DEFAULT_STATE_PROMPT,
+    /** Instructions appended after the state JSON in the system message; defaults to [defaultStatePrompt]. */
+    val statePrompt: String = defaultStatePrompt(stateToolName),
     /** Include `input.context` as a system message. */
     val includeContext: Boolean = true,
     /** Maximum number of LLM turns per run (each backend tool round trip is one turn). */
     val maxTurns: Int = 10,
 ) {
     public companion object {
-        public const val DEFAULT_STATE_PROMPT: String =
+        public fun defaultStatePrompt(stateToolName: String): String =
             "This is the shared application state that the user sees. To change it, call the " +
-                "update_state tool with the complete new state object (not a diff). Keep fields you do not change."
+                "$stateToolName tool with the complete new state object (not a diff). Keep fields you do not change."
     }
 }
 
@@ -72,28 +72,26 @@ public class KoogAgUiAgent(
         try {
             val inputState = input.state?.takeUnless { it is JsonNull }
             if (config.shareState && inputState != null) send(StateSnapshotEvent(inputState))
-            val pending = runAgent(input, inputState ?: JsonObject(emptyMap()), events = this)
-            send(RunFinishedEvent(input.threadId, input.runId, outcome = RunOutcome.Success(pending.ifEmpty { null })))
+            val pendingFrontendCallIds = runAgent(input, inputState ?: JsonObject(emptyMap()), events = this)
+            send(RunFinishedEvent(input.threadId, input.runId, outcome = RunOutcome.Success(pendingFrontendCallIds.ifEmpty { null })))
         } catch (e: CancellationException) {
             throw e
-        } catch (e: MaxTurnsReachedException) {
-            send(RunErrorEvent(e.message!!, code = RunErrorCodes.MAX_TURNS))
         } catch (e: Throwable) {
-            send(RunErrorEvent(e.message ?: "Agent run failed", code = RunErrorCodes.AGENT_ERROR))
+            send(e.toRunErrorEvent())
         }
     }
 
     /** Runs the Koog agent; returns ids of frontend tool calls the client still has to answer. */
     private suspend fun runAgent(input: RunAgentInput, state: JsonElement, events: SendChannel<AgUiEvent>): List<String> {
         val frontendTools = input.tools
-            .filter { toolRegistry.getToolOrNull(it.name) == null && it.name != config.stateToolName }
+            .filter { toolRegistry.getToolOrNull(it.name) == null && !(config.shareState && it.name == config.stateToolName) }
             .map(JsonSchemaToolDescriptors::toToolDescriptor)
         val extraTools = frontendTools + listOfNotNull(stateToolDescriptor().takeIf { config.shareState })
-        val pending = mutableListOf<String>()
+        val pendingFrontendCallIds = mutableListOf<String>()
 
         val strategy = functionalStrategy<Unit, Unit>("ag-ui") {
             llm.writeSession { tools = tools + extraTools }
-            runTurns(events, frontendTools.map { it.name }.toSet(), pending)
+            runTurns(events, frontendTools.map { it.name }.toSet(), pendingFrontendCallIds)
         }
         AIAgent(
             promptExecutor = promptExecutor,
@@ -103,13 +101,13 @@ public class KoogAgUiAgent(
             toolRegistry = toolRegistry,
             installFeatures = installFeatures,
         ).run(Unit)
-        return pending
+        return pendingFrontendCallIds
     }
 
     private suspend fun AIAgentFunctionalContext.runTurns(
         events: SendChannel<AgUiEvent>,
         frontendNames: Set<String>,
-        pending: MutableList<String>,
+        pendingFrontendCallIds: MutableList<String>,
     ) {
         // Inside the Koog context `config` is the agent config, so read our settings explicitly.
         val settings = this@KoogAgUiAgent.config
@@ -136,7 +134,7 @@ public class KoogAgUiAgent(
                         )
                     }
 
-                    call.name in frontendNames -> pending += call.id
+                    call.name in frontendNames -> pendingFrontendCallIds += call.id
 
                     else -> {
                         val part = executeTool(MessagePart.Tool.Call(call.id, call.name, call.arguments)).toMessagePart()
@@ -149,7 +147,7 @@ public class KoogAgUiAgent(
                 llm.writeSession { appendPrompt { message(Message.User(results, RequestMetaInfo.Empty)) } }
             }
             // Frontend tools pending: the client executes them and starts the next run.
-            if (pending.isNotEmpty()) return
+            if (pendingFrontendCallIds.isNotEmpty()) return
         }
         throw MaxTurnsReachedException(settings.maxTurns)
     }
@@ -191,3 +189,9 @@ public object RunErrorCodes {
 
 private class MaxTurnsReachedException(maxTurns: Int) :
     IllegalStateException("Stopped after $maxTurns LLM turns without a final answer")
+
+/** Maps a failed run to its terminal AG-UI event. */
+public fun Throwable.toRunErrorEvent(): RunErrorEvent = RunErrorEvent(
+    message = message ?: "Agent run failed",
+    code = if (this is MaxTurnsReachedException) RunErrorCodes.MAX_TURNS else RunErrorCodes.AGENT_ERROR,
+)
