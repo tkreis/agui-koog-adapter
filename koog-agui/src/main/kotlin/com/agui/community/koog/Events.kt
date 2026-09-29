@@ -5,6 +5,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -17,7 +18,10 @@ import kotlinx.serialization.json.JsonObject
 @Serializable
 @JsonClassDiscriminator("type")
 public sealed interface AgUiEvent {
-    /** When the event was created; by convention milliseconds since the Unix epoch. Omitted when `null`. */
+    /**
+     * When the event was created; by convention milliseconds since the Unix epoch. Omitted when `null`.
+     * Must lie within ±[MAX_SAFE_TIMESTAMP], the range JSON numbers keep exactly; events reject anything else.
+     */
     public val timestamp: Long?
 
     /** Extra information attached to the event. Omitted when `null`; values inside may be JSON `null`. */
@@ -34,11 +38,15 @@ public data class RunStartedEvent(
     val parentRunId: String? = null,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 /**
- * Closes a run that did not fail. [result] is the run's return value (any JSON); an absent [outcome] means
- * [RunOutcome.Success].
+ * Closes a run that did not fail. [result] is the run's return value: any JSON value except `null` (the
+ * protocol rejects an explicit null; leave it out instead). An absent [outcome] means [RunOutcome.Success].
  */
 @Serializable
 @SerialName("RUN_FINISHED")
@@ -49,7 +57,12 @@ public data class RunFinishedEvent(
     val outcome: RunOutcome? = null,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+        require(result !is JsonNull) { "result must not be JSON null; use null to omit it" }
+    }
+}
 
 @Serializable
 @SerialName("RUN_ERROR")
@@ -58,7 +71,11 @@ public data class RunErrorEvent(
     val code: String? = null,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 /** Outcome carried by [RunFinishedEvent]. */
 @OptIn(ExperimentalSerializationApi::class)
@@ -118,7 +135,11 @@ public data class TextMessageStartEvent(
     val role: String = "assistant",
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("TEXT_MESSAGE_CONTENT")
@@ -127,7 +148,11 @@ public data class TextMessageContentEvent(
     val delta: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("TEXT_MESSAGE_END")
@@ -135,7 +160,11 @@ public data class TextMessageEndEvent(
     val messageId: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 // ---------- Reasoning ----------
 
@@ -145,7 +174,11 @@ public data class ReasoningStartEvent(
     val messageId: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("REASONING_MESSAGE_START")
@@ -154,7 +187,11 @@ public data class ReasoningMessageStartEvent(
     val role: String = "reasoning",
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("REASONING_MESSAGE_CONTENT")
@@ -163,7 +200,11 @@ public data class ReasoningMessageContentEvent(
     val delta: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("REASONING_MESSAGE_END")
@@ -171,7 +212,11 @@ public data class ReasoningMessageEndEvent(
     val messageId: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("REASONING_END")
@@ -179,7 +224,11 @@ public data class ReasoningEndEvent(
     val messageId: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 // ---------- Tool calls ----------
 
@@ -191,7 +240,11 @@ public data class ToolCallStartEvent(
     val parentMessageId: String? = null,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("TOOL_CALL_ARGS")
@@ -200,7 +253,11 @@ public data class ToolCallArgsEvent(
     val delta: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("TOOL_CALL_END")
@@ -208,7 +265,11 @@ public data class ToolCallEndEvent(
     val toolCallId: String,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 @Serializable
 @SerialName("TOOL_CALL_RESULT")
@@ -219,7 +280,11 @@ public data class ToolCallResultEvent(
     val role: String = "tool",
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 // ---------- State and snapshots ----------
 
@@ -229,11 +294,23 @@ public data class StateSnapshotEvent(
     val snapshot: JsonElement,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 /**
- * The complete, ordered list of messages the producer owns. The client replaces messages with the same id in
- * place and keeps messages it holds on its own.
+ * The complete, ordered list of messages the producer owns. `@ag-ui/client` 1.0 reconciles it like this:
+ *
+ * - an existing message whose id is in the snapshot is replaced in place (it keeps its position);
+ * - an existing `user`, `assistant`, `tool`, `system` or `developer` message whose id is **not** in the snapshot
+ *   is removed, so a partial snapshot erases history and message ids must match the client's;
+ * - an existing `reasoning` message not in the snapshot is kept only if the snapshot has no reasoning messages;
+ * - an existing `activity` message not in the snapshot is kept only if the snapshot has no activity messages,
+ *   or, when [metadata] carries `{"@ag-ui/client": {"authoritativeActivityTypes": [...]}}`, only if its
+ *   `activityType` is not in that list;
+ * - snapshot messages with new ids are appended in snapshot order.
  */
 @Serializable
 @SerialName("MESSAGES_SNAPSHOT")
@@ -241,7 +318,11 @@ public data class MessagesSnapshotEvent(
     val messages: List<AgUiMessage>,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 // ---------- Activity ----------
 
@@ -258,7 +339,11 @@ public data class ActivitySnapshotEvent(
     val replace: Boolean? = null,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
 
 // ---------- Custom ----------
 
@@ -270,4 +355,17 @@ public data class CustomEvent(
     val value: JsonElement,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
-) : AgUiEvent
+) : AgUiEvent {
+    init {
+        requireSafeTimestamp(timestamp)
+    }
+}
+
+/** Largest magnitude of [AgUiEvent.timestamp]: 2^53 - 1, the largest integer a JSON number keeps exactly. */
+public const val MAX_SAFE_TIMESTAMP: Long = 9_007_199_254_740_991L
+
+private fun requireSafeTimestamp(timestamp: Long?) {
+    require(timestamp == null || timestamp in -MAX_SAFE_TIMESTAMP..MAX_SAFE_TIMESTAMP) {
+        "timestamp $timestamp is outside ±$MAX_SAFE_TIMESTAMP"
+    }
+}

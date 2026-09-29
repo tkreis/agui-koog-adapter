@@ -32,7 +32,7 @@ class WireFormatTest {
 
         assertEquals(6, input.messages.size)
         assertEquals(listOf("look", "[image attachment omitted]"), (input.messages[1] as UserMessage).textParts())
-        assertIs<UnknownMessage>(input.messages[4])
+        assertIs<ReasoningMessage>(input.messages[4])
         assertEquals(null, input.tools.single().parameters)
         assertEquals(4, input.messages.toKoogMessages().size) // user, user, assistant, tool-results
     }

@@ -1,17 +1,21 @@
 package com.agui.community.koog
 
-import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonContentPolymorphicSerializer
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -49,7 +53,8 @@ public data class RunAgentInput(
 /**
  * An answer to one [AgUiInterrupt], sent on the run that continues from it.
  *
- * @property payload the answer the interrupt asked for; any JSON value.
+ * @property payload the answer the interrupt asked for; any JSON value except `null` (the protocol rejects an
+ *   explicit null here; leave it out instead).
  * @property metadata envelope information about the answer (signatures, routing keys), as opposed to [payload].
  */
 @Serializable
@@ -58,7 +63,11 @@ public data class ResumeEntry(
     val status: ResumeStatus,
     val payload: JsonElement? = null,
     val metadata: JsonObject? = null,
-)
+) {
+    init {
+        require(payload !is JsonNull) { "payload must not be JSON null; use null to omit it" }
+    }
+}
 
 /** Whether an interrupt was answered or abandoned. */
 @Serializable
@@ -101,9 +110,13 @@ public data class AgUiFunctionCall(
 )
 
 /**
- * A conversation message, discriminated by [role]. Decoding is lenient: roles this library does not model
- * (for example `reasoning`) and malformed `activity` messages decode to [UnknownMessage] instead of failing
- * the run. Encoding writes each message with its [role], so messages can be sent in a [MessagesSnapshotEvent].
+ * A conversation message, discriminated by [role]. Encoding writes each message with its [role], so messages
+ * can be sent in a [MessagesSnapshotEvent].
+ *
+ * Decoding is lenient where the adapter does not depend on the message: roles this library does not model,
+ * and `activity` or `reasoning` messages that do not match their schema, decode to [UnknownMessage] instead
+ * of failing the run. Fields the model does not cover (for example `encryptedValue` outside reasoning
+ * messages, or `subagentRunId`) are ignored.
  */
 @Serializable(with = AgUiMessageSerializer::class)
 public sealed interface AgUiMessage {
@@ -119,8 +132,8 @@ public data class SystemMessage(
     override val id: String,
     val content: String,
     val name: String? = null,
-    override val metadata: JsonObject? = null,
     override val role: String = "system",
+    override val metadata: JsonObject? = null,
 ) : AgUiMessage
 
 @Serializable
@@ -128,8 +141,8 @@ public data class DeveloperMessage(
     override val id: String,
     val content: String,
     val name: String? = null,
-    override val metadata: JsonObject? = null,
     override val role: String = "developer",
+    override val metadata: JsonObject? = null,
 ) : AgUiMessage
 
 /** A user message. [content] is either a JSON string or an array of content parts. */
@@ -138,11 +151,16 @@ public data class UserMessage(
     override val id: String,
     val content: JsonElement,
     val name: String? = null,
-    override val metadata: JsonObject? = null,
     override val role: String = "user",
+    override val metadata: JsonObject? = null,
 ) : AgUiMessage {
-    public constructor(id: String, content: String, name: String? = null, metadata: JsonObject? = null) :
-        this(id, JsonPrimitive(content), name, metadata)
+    public constructor(
+        id: String,
+        content: String,
+        name: String? = null,
+        role: String = "user",
+        metadata: JsonObject? = null,
+    ) : this(id, JsonPrimitive(content), name, role, metadata)
 }
 
 @Serializable
@@ -151,19 +169,29 @@ public data class AssistantMessage(
     val content: String? = null,
     val toolCalls: List<AgUiToolCall>? = null,
     val name: String? = null,
-    override val metadata: JsonObject? = null,
     override val role: String = "assistant",
+    override val metadata: JsonObject? = null,
 ) : AgUiMessage
 
+/** A tool result. [content] is either a JSON string or an array of content parts, like [UserMessage.content]. */
 @Serializable
 public data class ToolMessage(
     override val id: String,
     val toolCallId: String,
-    val content: String = "",
+    val content: JsonElement = JsonPrimitive(""),
     val error: String? = null,
-    override val metadata: JsonObject? = null,
     override val role: String = "tool",
-) : AgUiMessage
+    override val metadata: JsonObject? = null,
+) : AgUiMessage {
+    public constructor(
+        id: String,
+        toolCallId: String,
+        content: String,
+        error: String? = null,
+        role: String = "tool",
+        metadata: JsonObject? = null,
+    ) : this(id, toolCallId, JsonPrimitive(content), error, role, metadata)
+}
 
 /**
  * Structured progress that is not conversation content (for example a step the client renders as its own
@@ -174,13 +202,23 @@ public data class ActivityMessage(
     override val id: String,
     val activityType: String,
     val content: JsonObject,
-    override val metadata: JsonObject? = null,
     override val role: String = "activity",
+    override val metadata: JsonObject? = null,
+) : AgUiMessage
+
+/** A span of the agent's reasoning. [encryptedValue] is a provider's opaque reasoning artefact. */
+@Serializable
+public data class ReasoningMessage(
+    override val id: String,
+    val content: String,
+    val encryptedValue: String? = null,
+    override val role: String = "reasoning",
+    override val metadata: JsonObject? = null,
 ) : AgUiMessage
 
 /**
- * Any message this library does not model. Only [id] and [role] are kept (nothing else is read, so it never
- * fails decoding); it is not meant to be sent back to a client.
+ * Any message this library does not model, or a lenient message that did not match its schema. Only [id] and
+ * [role] are kept, so it is not meant to be sent back to a client.
  */
 @Serializable
 public data class UnknownMessage(
@@ -190,31 +228,74 @@ public data class UnknownMessage(
     override val metadata: JsonObject? get() = null
 }
 
-internal object AgUiMessageSerializer : JsonContentPolymorphicSerializer<AgUiMessage>(AgUiMessage::class) {
-    override fun selectDeserializer(element: JsonElement): DeserializationStrategy<AgUiMessage> =
-        when (element.jsonObject["role"]?.jsonPrimitive?.contentOrNull) {
+/**
+ * Decodes by `role`. `system`, `developer`, `user`, `assistant` and `tool` must match their schema, because the
+ * adapter hands them to the model; everything else falls back to [UnknownMessage] rather than failing the run.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+internal object AgUiMessageSerializer : KSerializer<AgUiMessage> {
+    override val descriptor: SerialDescriptor =
+        SerialDescriptor("com.agui.community.koog.AgUiMessage", JsonObject.serializer().descriptor)
+
+    override fun deserialize(decoder: Decoder): AgUiMessage {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("AgUiMessage can only be decoded from JSON")
+        val json = input.json
+        val element = input.decodeJsonElement() as? JsonObject
+            ?: throw SerializationException("An AG-UI message must be a JSON object")
+        val role = element.string("role")
+        val strict = when (role) {
             "system" -> SystemMessage.serializer()
             "developer" -> DeveloperMessage.serializer()
             "user" -> UserMessage.serializer()
             "assistant" -> AssistantMessage.serializer()
             "tool" -> ToolMessage.serializer()
-            "activity" -> if (element.isWellFormedActivity()) ActivityMessage.serializer() else UnknownMessage.serializer()
-            else -> UnknownMessage.serializer()
+            else -> null
         }
+        if (strict != null) return json.decodeFromJsonElement(strict, element)
+        val lenient = when (role) {
+            "activity" -> ActivityMessage.serializer()
+            "reasoning" -> ReasoningMessage.serializer()
+            else -> null
+        }
+        return lenient?.let {
+            try {
+                json.decodeFromJsonElement(it, element)
+            } catch (e: IllegalArgumentException) { // includes SerializationException
+                null
+            }
+        } ?: UnknownMessage(element.string("id").orEmpty(), role.orEmpty())
+    }
+
+    override fun serialize(encoder: Encoder, value: AgUiMessage) {
+        when (value) {
+            is SystemMessage -> encoder.encodeSerializableValue(SystemMessage.serializer(), value)
+            is DeveloperMessage -> encoder.encodeSerializableValue(DeveloperMessage.serializer(), value)
+            is UserMessage -> encoder.encodeSerializableValue(UserMessage.serializer(), value)
+            is AssistantMessage -> encoder.encodeSerializableValue(AssistantMessage.serializer(), value)
+            is ToolMessage -> encoder.encodeSerializableValue(ToolMessage.serializer(), value)
+            is ActivityMessage -> encoder.encodeSerializableValue(ActivityMessage.serializer(), value)
+            is ReasoningMessage -> encoder.encodeSerializableValue(ReasoningMessage.serializer(), value)
+            is UnknownMessage -> encoder.encodeSerializableValue(UnknownMessage.serializer(), value)
+        }
+    }
+
+    private fun JsonObject.string(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
 
-private fun JsonElement.isWellFormedActivity(): Boolean =
-    (jsonObject["activityType"] as? JsonPrimitive)?.isString == true && jsonObject["content"] is JsonObject
-
 /** Text of each user content part; non-text parts are replaced by a short placeholder. */
-public fun UserMessage.textParts(): List<String> = when (val c = content) {
-    is JsonPrimitive -> listOf(c.contentOrNull.orEmpty())
-    is JsonArray -> c.map { part ->
+public fun UserMessage.textParts(): List<String> = content.textParts()
+
+/** Text of each tool result content part; non-text parts are replaced by a short placeholder. */
+public fun ToolMessage.textParts(): List<String> = content.textParts()
+
+private fun JsonElement.textParts(): List<String> = when (this) {
+    is JsonPrimitive -> listOf(contentOrNull.orEmpty())
+    is JsonArray -> map { part ->
         val obj = part as? JsonObject ?: return@map part.toString()
         when (val type = obj["type"]?.jsonPrimitive?.contentOrNull) {
             "text" -> obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
             else -> "[${type ?: "unknown"} attachment omitted]"
         }
     }
-    else -> listOf(c.toString())
+    else -> listOf(toString())
 }

@@ -2,7 +2,7 @@
 
 Status: v1 implemented in this repository (`koog-agui`, `koog-agui-ktor`, `example/`). Verified 2026-09-29: live e2e (5 scenarios, gpt-4.1-mini) green through `@ag-ui/client` 1.0.0 verifier; browser rendering checked.
 Later on 2026-09-29 the wire model was extended with interrupts/resume, `CUSTOM`, `ACTIVITY_SNAPSHOT`, `MESSAGES_SNAPSHOT` and the
-base event fields, checked against the `@ag-ui/core` 1.0.1 typings; 42 unit tests green. Published through JitPack (§5.1).
+base event fields, checked against the `@ag-ui/core` 1.0.1 typings and schemas; 50 unit tests green. Published through JitPack (§5.1).
 Targets: AG-UI protocol **1.0** (`@ag-ui/client` 1.0.0, `@ag-ui/core` 1.0.1), Koog **1.3.0**, Kotlin 2.3, JVM 21.
 
 ## 1. Goal
@@ -27,17 +27,25 @@ Non-goals for v1: server-side thread persistence, protobuf transport, subagent e
   the server is stateless.
 - Messages are discriminated by `role`: `system`, `developer`, `user` (string or content parts),
   `assistant` (`content?`, `toolCalls?[{id, type:"function", function:{name, arguments}}]`),
-  `tool` (`toolCallId`, `content`, `error?`), `reasoning`, `activity`.
+  `tool` (`toolCallId`, `content` as string or content parts, `error?`), `reasoning` (`content`, `encryptedValue?`),
+  `activity` (`activityType`, `content` object). Every message may carry `metadata`.
 - Events are discriminated by `type`. Absent optional fields must be **omitted**, not `null`
-  (the client's zod schemas reject `null`). Every event may carry `timestamp` (ms since epoch by convention)
-  and `metadata` (an object; JSON `null` values inside it are data and are kept). `rawEvent` is not modelled.
+  (the client's zod schemas reject `null`, including a JSON `null` for `RUN_FINISHED.result` and
+  `resume[].payload`). Every event may carry `timestamp` (an integer within ±(2^53 − 1); ms since epoch by
+  convention) and `metadata` (an object; JSON `null` values inside it are data and are kept). `rawEvent` is not modelled.
 - `RUN_FINISHED` carries an optional `result` (any JSON) and `outcome`: `success` (`pendingToolCallIds?`),
   `interrupt` (`interrupts`, at least one: `{id, reason, message?, toolCallId?, responseSchema?, expiresAt?, metadata?}`)
   or `cancelled`. Absent means success. A run that continues from an interrupt sends
   `resume: [{interruptId, status: "resolved"|"cancelled", payload?, metadata?}]` in its `RunAgentInput`.
 - `ACTIVITY_SNAPSHOT(messageId, activityType, content, replace?)` creates or overwrites an `activity` message
-  (`replace:false` leaves an existing one untouched); `MESSAGES_SNAPSHOT(messages)` declares the producer's messages;
-  `CUSTOM(name, value)` is the application's own event.
+  (`replace:false` leaves an existing one untouched); `CUSTOM(name, value)` is the application's own event.
+- `MESSAGES_SNAPSHOT(messages)` declares the producer's messages. `@ag-ui/client` 1.0 applies it per role: a known id
+  is replaced in place, new ids are appended in snapshot order, and an existing message whose id is missing is
+  **removed** if it is `user`, `assistant`, `tool`, `system` or `developer`. So a snapshot must be complete and
+  echo the client's message ids. A missing `reasoning` message survives only a snapshot without reasoning messages.
+  A missing `activity` message survives only a snapshot without activity messages, or, when the event's
+  `metadata["@ag-ui/client"].authoritativeActivityTypes` is a list, only if its `activityType` is not listed
+  (`null` there removes every missing activity).
 - Client-side verifier rules (enforced by `@ag-ui/client`):
   - first event is `RUN_STARTED` (or `RUN_ERROR`); nothing but `RUN_ERROR`/new `RUN_STARTED` after `RUN_FINISHED`;
   - `TEXT_MESSAGE_START` → `CONTENT*` → `END` per `messageId`; `TOOL_CALL_START` → `ARGS*` → `END` per `toolCallId`;
@@ -100,7 +108,7 @@ Spring AI adapter disables Spring AI's tool execution.
 | `user` (string) | `Message.User(content)` |
 | `user` (parts) | `Message.User` with one `MessagePart.Text` per part; binary parts → text placeholder `[<type> attachment omitted]` (v1) |
 | `assistant` | `Message.Assistant(parts = [Text?] + Tool.Call(id, name, arguments)*)` |
-| consecutive `tool` messages | one `Message.User` with `MessagePart.Tool.Result(id, toolName, content, isError = error != null)` per message; tool name is looked up from the preceding assistant tool call |
+| consecutive `tool` messages | one `Message.User` with `MessagePart.Tool.Result(id, toolName, content, isError = error != null)` per message; tool name is looked up from the preceding assistant tool call; content parts are joined by newlines, non-text parts become placeholders |
 | `reasoning`, `activity`, unknown roles | dropped (decoded leniently, never fail the run) |
 
 Server-side preamble, in this order: configured system prompt, then (if `context` non-empty) a system message
@@ -174,9 +182,14 @@ val events: Flow<AgUiEvent> = agent.run(input: RunAgentInput)
 - `AgUiJson`: the kotlinx `Json` instance (unknown keys ignored, `explicitNulls = false`, `type` / `role` discriminators).
 - `AgUiEvent` sealed hierarchy + `RunAgentInput`, `AgUiMessage`, `AgUiTool` wire model. Beyond what the adapter emits
   it covers `RunOutcome.Interrupt` / `RunOutcome.Cancelled` with `AgUiInterrupt`, `RunAgentInput.resume` (`ResumeEntry`,
-  `ResumeStatus`), `CustomEvent`, `ActivitySnapshotEvent`, `MessagesSnapshotEvent`, `ActivityMessage`, and
-  `timestamp` / `metadata` on every event and `metadata` on every message. Messages encode with their `role`, so they
-  can be sent in a snapshot. (Own, lean, lenient
+  `ResumeStatus`), `CustomEvent`, `ActivitySnapshotEvent`, `MessagesSnapshotEvent`, `ActivityMessage`,
+  `ReasoningMessage`, tool messages with content parts, and `timestamp` / `metadata` on every event and `metadata`
+  on every message. Messages encode with their `role`, so upstream messages survive decode → `MESSAGES_SNAPSHOT`
+  (fields not modelled, such as `encryptedValue` outside reasoning messages and `subagentRunId`, are dropped).
+  Values the client schemas reject cannot be built: timestamps outside ±`MAX_SAFE_TIMESTAMP`, JSON `null` as
+  `RunFinishedEvent.result` or `ResumeEntry.payload`. `system`/`developer`/`user`/`assistant`/`tool` messages must
+  match their schema; any other message, including an `activity` or `reasoning` message that does not, decodes to
+  `UnknownMessage`. (Own, lean, lenient
   decoding; the community Kotlin SDK `kotlin-core` 0.4.1 was evaluated and rejected because it lags spec 1.0:
   it fails to decode `reasoning` messages and tools without `parameters`, and rejects empty text deltas).
 - `SseEncoder.encode(event): String` → `data: <json>\n\n`; `Throwable.toRunErrorEvent(includeDetails = false)` for terminal errors (the Ktor route never includes details).

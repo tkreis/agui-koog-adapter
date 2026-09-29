@@ -11,8 +11,9 @@ import ai.koog.prompt.message.ResponseMetaInfo
  * - `system` / `developer` → [Message.System]
  * - `user` → [Message.User] with one [MessagePart.Text] per content part (non-text parts become placeholders)
  * - `assistant` → [Message.Assistant] with optional text and [MessagePart.Tool.Call]s
- * - consecutive `tool` messages → one [Message.User] holding [MessagePart.Tool.Result]s
- * - `activity` and other roles are dropped
+ * - consecutive `tool` messages → one [Message.User] holding [MessagePart.Tool.Result]s (content parts joined
+ *   by newlines, non-text parts become placeholders)
+ * - `activity`, `reasoning` and other roles are dropped
  */
 public fun List<AgUiMessage>.toKoogMessages(): List<Message> {
     val toolNames = mutableMapOf<String, String>()
@@ -47,10 +48,10 @@ public fun List<AgUiMessage>.toKoogMessages(): List<Message> {
             is ToolMessage -> pendingResults += MessagePart.Tool.Result(
                 id = message.toolCallId,
                 tool = toolNames[message.toolCallId] ?: "unknown",
-                output = message.error?.let { "Error: $it" } ?: message.content,
+                output = message.error?.let { "Error: $it" } ?: message.textParts().joinToString("\n"),
                 isError = message.error != null,
             )
-            is ActivityMessage, is UnknownMessage -> Unit
+            is ActivityMessage, is ReasoningMessage, is UnknownMessage -> Unit
         }
     }
     flushResults()

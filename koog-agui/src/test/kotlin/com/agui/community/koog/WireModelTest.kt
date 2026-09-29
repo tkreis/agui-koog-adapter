@@ -79,6 +79,7 @@ class WireModelTest {
                 AssistantMessage("a", content = "hello", toolCalls = listOf(AgUiToolCall("c", function = AgUiFunctionCall("f"))), metadata = meta),
                 ToolMessage("tm", toolCallId = "c", content = "ok", error = "partial", metadata = meta),
                 ActivityMessage("x", "plan", buildJsonObject { put("step", 2) }, metadata = meta),
+                ReasoningMessage("r", "thinking", encryptedValue = "sig", metadata = meta),
             ),
             timestamp = 19L,
             metadata = meta,
@@ -156,11 +157,86 @@ class WireModelTest {
         )
         assertEquals(
             """{"type":"MESSAGES_SNAPSHOT","messages":[""" +
-                """{"id":"u1","content":"hi","metadata":{"source":"chat"},"role":"user"},""" +
+                """{"id":"u1","content":"hi","role":"user","metadata":{"source":"chat"}},""" +
                 """{"id":"a1","content":"hello","role":"assistant"},""" +
                 """{"id":"x1","activityType":"plan_progress","content":{"step":2},"role":"activity"}]}""",
             encode(event),
         )
+    }
+
+    @Test
+    fun `explicit JSON null is rejected where the protocol forbids it and kept where it is data`() {
+        assertFailsWith<IllegalArgumentException> { ResumeEntry("i", ResumeStatus.Resolved, payload = JsonNull) }
+        assertFailsWith<IllegalArgumentException> { RunFinishedEvent("t", "r", result = JsonNull) }
+        val decoded = AgUiJson.decodeFromString(ResumeEntry.serializer(), """{"interruptId":"i","status":"resolved","payload":null}""")
+        assertEquals("""{"interruptId":"i","status":"resolved"}""", AgUiJson.encodeToString(ResumeEntry.serializer(), decoded))
+        assertEquals("""{"type":"CUSTOM","name":"n","value":null}""", encode(CustomEvent("n", JsonNull)))
+    }
+
+    @Test
+    fun `timestamps must stay within the range JSON numbers keep exactly`() {
+        assertEquals(MAX_SAFE_TIMESTAMP, TextMessageEndEvent("m", timestamp = MAX_SAFE_TIMESTAMP).timestamp)
+        assertEquals(-MAX_SAFE_TIMESTAMP, TextMessageEndEvent("m", timestamp = -MAX_SAFE_TIMESTAMP).timestamp)
+        assertFailsWith<IllegalArgumentException> { TextMessageEndEvent("m", timestamp = MAX_SAFE_TIMESTAMP + 1) }
+        assertFailsWith<IllegalArgumentException> { CustomEvent("n", JsonNull, timestamp = -MAX_SAFE_TIMESTAMP - 1) }
+        assertFailsWith<IllegalArgumentException> { decode("""{"type":"RUN_ERROR","message":"x","timestamp":9007199254740992}""") }
+    }
+
+    @Test
+    fun `message constructors keep their positional order and components`() {
+        val (id, content, name, role) = SystemMessage("s", "sys", null, "system")
+        assertEquals(listOf("s", "sys", null, "system"), listOf(id, content, name, role))
+        assertEquals("developer", DeveloperMessage("d", "dev", null, "developer").component4())
+        assertEquals("user", UserMessage("u", JsonPrimitive("hi"), null, "user").component4())
+        assertEquals("assistant", AssistantMessage("a", "x", null, null, "assistant").component5())
+        assertEquals("tool", ToolMessage("t", "c", "ok", null, "tool").component5())
+        assertEquals(JsonPrimitive("ok"), ToolMessage("t", "c", "ok").content)
+    }
+
+    /** Messages in the shapes of `@ag-ui/core` 1.0.1 (version-DEKfpZNa.d.ts), every modelled field set. */
+    private val upstreamMessages = """
+        [
+          {"id":"s1","role":"system","content":"Be brief.","name":"policy","metadata":{"source":"server"}},
+          {"id":"d1","role":"developer","content":"Use tools.","name":"dev"},
+          {"id":"u1","role":"user","name":"alex","metadata":{"clientId":"c-1"},"content":[
+            {"type":"text","text":"What is this?"},
+            {"type":"image","id":"p1","source":{"type":"url","value":"https://example.com/a.png","mimeType":"image/png"},"metadata":{"w":1}},
+            {"type":"document","source":{"type":"data","value":"aGk=","mimeType":"application/pdf"}}
+          ]},
+          {"id":"r1","role":"reasoning","content":"Looking at the image.","encryptedValue":"enc-1","metadata":{"model":"m"}},
+          {"id":"a1","role":"assistant","content":"Let me check.","name":"agent","toolCalls":[
+            {"id":"c1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"a\"}"}}
+          ]},
+          {"id":"t1","role":"tool","toolCallId":"c1","error":"partial","content":[
+            {"type":"text","text":"found"},
+            {"type":"image","source":{"type":"file","value":"f-1","provider":"openai"}}
+          ]},
+          {"id":"t2","role":"tool","toolCallId":"c1","content":"plain"},
+          {"id":"x1","role":"activity","activityType":"plan_progress","content":{"step":2,"done":null},"metadata":{"k":null}}
+        ]
+    """.trimIndent()
+
+    @Test
+    fun `upstream messages survive decode and re-encode in a MESSAGES_SNAPSHOT`() {
+        val original = AgUiJson.parseToJsonElement("""{"type":"MESSAGES_SNAPSHOT","messages":$upstreamMessages}""")
+        val event = assertIs<MessagesSnapshotEvent>(AgUiJson.decodeFromJsonElement(AgUiEvent.serializer(), original))
+
+        assertEquals(
+            listOf("SystemMessage", "DeveloperMessage", "UserMessage", "ReasoningMessage", "AssistantMessage", "ToolMessage", "ToolMessage", "ActivityMessage"),
+            event.messages.map { it::class.simpleName },
+        )
+        assertEquals(original, AgUiJson.encodeToJsonElement(AgUiEvent.serializer(), event))
+    }
+
+    @Test
+    fun `tool content parts reach the model as text`() {
+        val tool = AgUiJson.decodeFromString(
+            AgUiMessage.serializer(),
+            """{"id":"t1","role":"tool","toolCallId":"c1","content":[{"type":"text","text":"found"},{"type":"image","source":{"type":"url","value":"x"}}]}""",
+        )
+        val history = listOf(AssistantMessage("a", toolCalls = listOf(AgUiToolCall("c1", function = AgUiFunctionCall("lookup")))), tool)
+        val result = history.toKoogMessages().last().parts.single() as ai.koog.prompt.message.MessagePart.Tool.Result
+        assertEquals("found\n[image attachment omitted]", result.output)
     }
 
     @Test
@@ -195,15 +271,25 @@ class WireModelTest {
               {"id":"1","role":"activity","activityType":"plan","content":{"step":1},"metadata":{"k":"v"}},
               {"id":"2","role":"activity","activityType":"plan"},
               {"id":"3","role":"reasoning","content":"thinking","metadata":"not an object"},
-              {"id":"4","role":"user","content":"hi","metadata":{"k":"v"}}
+              {"id":"4","role":"user","content":"hi","metadata":{"k":"v"}},
+              {"role":"activity","activityType":"plan","content":{}},
+              {"id":"6","role":"activity","activityType":"plan","content":{},"metadata":[1]},
+              {"id":"7","role":"activity","activityType":7,"content":"x"},
+              {"id":8,"role":"reasoning"},
+              {"id":"9","role":{"nested":true}}
             ]}
             """.trimIndent(),
         ).messages
 
-        assertEquals(ActivityMessage("1", "plan", buildJsonObject { put("step", 1) }, buildJsonObject { put("k", "v") }), messages[0])
+        assertEquals(ActivityMessage("1", "plan", buildJsonObject { put("step", 1) }, metadata = buildJsonObject { put("k", "v") }), messages[0])
         assertEquals(UnknownMessage("2", "activity"), messages[1])
         assertEquals(UnknownMessage("3", "reasoning"), messages[2])
         assertEquals(buildJsonObject { put("k", "v") }, assertIs<UserMessage>(messages[3]).metadata)
+        assertEquals(UnknownMessage("", "activity"), messages[4]) // missing id
+        assertEquals(UnknownMessage("6", "activity"), messages[5]) // metadata is not an object
+        assertEquals(UnknownMessage("7", "activity"), messages[6]) // wrong field types
+        assertEquals(UnknownMessage("", "reasoning"), messages[7])
+        assertEquals(UnknownMessage("9", ""), messages[8])
     }
 }
 
@@ -240,5 +326,45 @@ class AgUiSequenceRulesTest {
         assertFailsWith<AssertionError> {
             assertValidAgUiSequence(listOf(RunStartedEvent("t", "r"), RunFinishedEvent("t", "r"), CustomEvent("late", JsonNull)))
         }
+    }
+}
+
+/** The reconciliation rules documented on [MessagesSnapshotEvent], checked with the client port in TestSupport. */
+class MessagesSnapshotReconciliationTest {
+
+    private val plan = ActivityMessage("x1", "plan", buildJsonObject { put("step", 1) })
+    private val search = ActivityMessage("x2", "search", buildJsonObject { put("q", "a") })
+    private val thought = ReasoningMessage("r1", "hmm")
+    private val current = listOf(UserMessage("u1", "hi"), plan, AssistantMessage("a1", content = "old"), thought, search, UserMessage("u2", "local"))
+
+    @Test
+    fun `replaces in place, removes omitted conversation messages and appends new ones`() {
+        val result = applyMessagesSnapshot(
+            current,
+            MessagesSnapshotEvent(listOf(UserMessage("u1", "hi"), AssistantMessage("a1", content = "new"), AssistantMessage("a2", content = "more"))),
+        )
+        // u2 was not echoed, so it is gone; the activity and reasoning messages survive an activity- and reasoning-free snapshot.
+        assertEquals(listOf("u1", "x1", "a1", "r1", "x2", "a2"), result.map { it.id })
+        assertEquals("new", (result[2] as AssistantMessage).content)
+    }
+
+    @Test
+    fun `a snapshot with activity or reasoning messages is authoritative for them`() {
+        val result = applyMessagesSnapshot(current, MessagesSnapshotEvent(listOf(UserMessage("u1", "hi"), plan, ReasoningMessage("r2", "new"))))
+        assertEquals(listOf("u1", "x1", "r2"), result.map { it.id })
+    }
+
+    @Test
+    fun `authoritativeActivityTypes limits which activity types the snapshot replaces`() {
+        val authoritative = buildJsonObject {
+            put("@ag-ui/client", buildJsonObject { put("authoritativeActivityTypes", JsonArray(listOf(JsonPrimitive("plan")))) })
+        }
+        val event = MessagesSnapshotEvent(listOf(UserMessage("u1", "hi"), search.copy(id = "x3")), metadata = authoritative)
+        // plan is replaced by the snapshot, search is not; reasoning survives a reasoning-free snapshot.
+        assertEquals(listOf("u1", "r1", "x2", "x3"), applyMessagesSnapshot(current, event).map { it.id })
+        assertEquals(
+            """{"type":"MESSAGES_SNAPSHOT","messages":[],"metadata":{"@ag-ui/client":{"authoritativeActivityTypes":["plan"]}}}""",
+            AgUiJson.encodeToString(AgUiEvent.serializer(), MessagesSnapshotEvent(emptyList(), metadata = authoritative)),
+        )
     }
 }

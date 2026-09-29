@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -116,6 +120,40 @@ fun assertValidAgUiSequence(events: List<AgUiEvent>) {
         }
     }
     assertTrue(finished || errored, "run did not end with RUN_FINISHED or RUN_ERROR")
+}
+
+/**
+ * Applies a MESSAGES_SNAPSHOT to [current] the way `@ag-ui/client` 1.0 does
+ * (sdks/typescript/packages/client/src/apply/default.ts, MESSAGES_SNAPSHOT case).
+ */
+fun applyMessagesSnapshot(current: List<AgUiMessage>, event: MessagesSnapshotEvent): List<AgUiMessage> {
+    val snapshot = event.messages.associateBy { it.id }
+    val snapshotHasActivity = event.messages.any { it.role == "activity" }
+    val snapshotHasReasoning = event.messages.any { it.role == "reasoning" }
+
+    // metadata["@ag-ui/client"].authoritativeActivityTypes: absent → only an activity-free snapshot keeps activities;
+    // JSON null → no activity survives; a list (malformed → empty) → activities of listed types are replaced.
+    fun activityRetained(message: ActivityMessage): Boolean {
+        val metadata = event.metadata
+        if (metadata == null || "@ag-ui/client" !in metadata) return !snapshotHasActivity
+        val clientMeta = metadata["@ag-ui/client"] as? JsonObject ?: return true
+        if ("authoritativeActivityTypes" !in clientMeta) return !snapshotHasActivity
+        val types = clientMeta["authoritativeActivityTypes"]
+        if (types is JsonNull) return false
+        val names = (types as? JsonArray)?.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: return true }
+            ?: return true
+        return message.activityType !in names
+    }
+
+    fun retained(message: AgUiMessage): Boolean = when {
+        message is ActivityMessage -> activityRetained(message)
+        message.role == "reasoning" -> !snapshotHasReasoning
+        else -> false // user, assistant, tool, system, developer: the snapshot is authoritative
+    }
+
+    val kept = current.filter { it.id in snapshot || retained(it) }.map { snapshot[it.id] ?: it }
+    val keptIds = kept.map { it.id }.toSet()
+    return kept + event.messages.filter { it.id !in keptIds }
 }
 
 fun Message.text(): String =
