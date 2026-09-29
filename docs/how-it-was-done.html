@@ -50,7 +50,7 @@
 
   <div class="grid stats">
     <div class="card stat"><b>43</b><span>files in the repository (including the Gradle wrapper, pnpm lockfile, docs and screenshot)</span></div>
-    <div class="card stat"><b>967</b><span>library lines in 8 files (<code>koog-agui</code> + <code>koog-agui-ktor</code>)</span></div>
+    <div class="card stat"><b>964</b><span>library lines in 8 files (<code>koog-agui</code> + <code>koog-agui-ktor</code>)</span></div>
     <div class="card stat"><b>28</b><span>unit tests, no network needed, all green</span></div>
     <div class="card stat"><b>5 / 5</b><span>live scenarios pass with OpenAI through the official <code>@ag-ui/client</code> verifier</span></div>
   </div>
@@ -58,7 +58,7 @@
   <h2>Files</h2>
   <table>
     <tr><th>Area</th><th>Files</th><th class="num">Lines</th></tr>
-    <tr><td><b>Library</b> <code>koog-agui</code></td><td><code>KoogAgUiAgent.kt</code> (run loop), <code>AgUiStreamTranslator.kt</code> (frames to events), <code>Events.kt</code>, <code>Types.kt</code> (wire model), <code>SseEncoder.kt</code>, <code>MessageConversion.kt</code>, <code>JsonSchemaToolDescriptors.kt</code></td><td class="num">904</td></tr>
+    <tr><td><b>Library</b> <code>koog-agui</code></td><td><code>KoogAgUiAgent.kt</code> (run loop), <code>AgUiStreamTranslator.kt</code> (frames to events), <code>Events.kt</code>, <code>Types.kt</code> (wire model), <code>SseEncoder.kt</code>, <code>MessageConversion.kt</code>, <code>JsonSchemaToolDescriptors.kt</code></td><td class="num">901</td></tr>
     <tr><td><b>Library</b> <code>koog-agui-ktor</code></td><td><code>AgUiRouting.kt</code>: <code>Route.agUi(path) { agent }</code></td><td class="num">63</td></tr>
     <tr><td><b>Tests</b></td><td><code>KoogAgUiAgentTest</code>, <code>MessageConversionTest</code>, <code>WireAndTranslatorTest</code>, <code>TestSupport</code> (scripted LLM, Kotlin port of the verifier rules), <code>AgUiRoutingTest</code></td><td class="num">699</td></tr>
     <tr><td><b>Example</b></td><td><code>example/server/Main.kt</code> (Ktor + OpenAI), <code>example/web</code> (React on <code>@ag-ui/client</code>), <code>scripts/e2e.ts</code>, <code>styles.css</code></td><td class="num">561</td></tr>
@@ -130,7 +130,7 @@
       <li><span class="tag t-trim">trim</span><code>KoogAgUiAgent</code> shrank from 223 lines (it is 197 after all review rounds, which also added features). Removed a <code>state</code> variable that was written but never read, the <code>config</code>/<code>agUiConfig</code> alias and the <code>ProducerScope</code> receiver trick.</li>
       <li><span class="tag t-trim">trim</span>Translator: the two duplicated tool-call branches became <code>startCall</code> and <code>PendingCall.continuedBy</code>.</li>
       <li><span class="tag t-trim">trim</span>Ktor route: merged two catch blocks, because <code>SerializationException</code> is an <code>IllegalArgumentException</code>. Also removed redundant <code>@SerialName</code> annotations and unused imports.</li>
-      <li>Result: library code went from 1,014 to 934 lines after this pass. Later rounds added reasoning replay, error codes and fixes; it is 967 lines now.</li>
+      <li>Result: library code went from 1,014 to 934 lines after this pass. Later rounds added reasoning replay, error codes and fixes; it is 964 lines now.</li>
     </ul>
   </div>
 
