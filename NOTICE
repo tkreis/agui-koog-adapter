@@ -1,0 +1,9 @@
+koog-agui
+Copyright 2026 Thomas Kreis
+
+This product includes software developed as an adapter for:
+- Koog (https://github.com/JetBrains/koog), licensed under the Apache License 2.0.
+- The AG-UI protocol (https://github.com/ag-ui-protocol/ag-ui), licensed under the MIT License.
+
+The JSON Schema to ToolDescriptor conversion follows the design of Koog's MCP tool definition parser.
+The run-loop design follows the AG-UI community Spring AI integration.

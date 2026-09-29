@@ -72,3 +72,7 @@ Optional environment variables:
 - SSE framing through Ktor.
 
 During development, the upstream `ag-ui` and `koog` repositories were cloned into a git-ignored `vendor/` folder for reference. The build does not need them.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
