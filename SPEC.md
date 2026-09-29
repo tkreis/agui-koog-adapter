@@ -1,6 +1,6 @@
 # Spec: AG-UI protocol support for Koog
 
-Status: v1 implemented in this repository (`koog-agui`, `koog-agui-ktor`, `example/`). Verified 2026-09-29: 25 unit tests green; live e2e (5 scenarios, gpt-4.1-mini) green through `@ag-ui/client` 1.0.0 verifier; browser rendering checked.
+Status: v1 implemented in this repository (`koog-agui`, `koog-agui-ktor`, `example/`). Verified 2026-09-29: 28 unit tests green; live e2e (5 scenarios, gpt-4.1-mini) green through `@ag-ui/client` 1.0.0 verifier; browser rendering checked.
 Targets: AG-UI protocol **1.0** (`@ag-ui/client` 1.0.0), Koog **1.3.0**, Kotlin 2.3, JVM 21.
 
 ## 1. Goal
@@ -91,7 +91,7 @@ Spring AI adapter disables Spring AI's tool execution.
 | `reasoning`, `activity`, unknown roles | dropped (decoded leniently, never fail the run) |
 
 Server-side preamble, in this order: configured system prompt, then (if `context` non-empty) a system message
-listing `description: value` pairs, then (if state sharing is on and state present) a system message with the
+listing `description: value` pairs, then (if state sharing is on) a system message with the
 current state JSON (`{}` if the client sent none) and the `update_state` instructions.
 
 Frontend tool descriptors are advertised on every LLM request so Koog's `MissingToolsConversionStrategy` does not
@@ -123,6 +123,7 @@ repeat (maxTurns):
     calls = tool calls of this turn
     if calls empty → break
     handle update_state → STATE_SNAPSHOT, tool result "State updated." appended
+                          (invalid arguments → error result, state untouched)
     frontend calls present → break (pending)
     execute backend calls → TOOL_CALL_RESULT(messageId, toolCallId, content), results appended
 RUN_FINISHED(threadId, runId, outcome = {type:"success", pendingToolCallIds?})

@@ -191,6 +191,19 @@ class KoogAgUiAgentTest {
     }
 
     @Test
+    fun `renamed state tool is advertised and named in the state prompt`() = runTest {
+        val executor = ScriptedExecutor(toolTurn("s1", "set_state", "{\"state\":{\"a\":1}}"), textTurn("ok"))
+        val events = agent(executor, AgUiAgentConfig(shareState = true, stateToolName = "set_state"))
+            .run(input(UserMessage("u", "x"), state = buildJsonObject {})).toList()
+
+        assertValidAgUiSequence(events)
+        val system = executor.prompts.first().messages.filterIsInstance<Message.System>().joinToString { it.text() }
+        assertTrue("call the set_state tool" in system)
+        assertTrue(executor.tools.first().any { it.name == "set_state" })
+        assertEquals(buildJsonObject { put("a", 1) }, events.filterIsInstance<StateSnapshotEvent>().last().snapshot)
+    }
+
+    @Test
     fun `context is passed to the model`() = runTest {
         val executor = ScriptedExecutor(textTurn("Hi Alex"))
         agent(executor).run(

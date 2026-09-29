@@ -17,10 +17,10 @@ import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
 import io.ktor.http.CacheControl
+import io.ktor.utils.io.ClosedByteChannelException
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.io.IOException
 
 /**
  * Exposes an AG-UI endpoint: `POST path` with a `RunAgentInput` JSON body, answered with a
@@ -52,7 +52,7 @@ public fun Route.agUiEvents(path: String, events: suspend ApplicationCall.(RunAg
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: IOException) {
+            } catch (e: ClosedByteChannelException) {
                 // Client disconnected: nothing left to write to.
             } catch (e: Throwable) {
                 // Event sources other than KoogAgUiAgent may fail without emitting RUN_ERROR themselves.

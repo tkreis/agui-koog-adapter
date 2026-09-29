@@ -155,6 +155,3 @@ public fun UserMessage.textParts(): List<String> = when (val c = content) {
     }
     else -> listOf(c.toString())
 }
-
-/** Plain text of a user message, parts joined by newlines. */
-public fun UserMessage.textContent(): String = textParts().joinToString("\n")

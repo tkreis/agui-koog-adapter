@@ -15,6 +15,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.server.routing.routing
 import io.ktor.server.testing.testApplication
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -47,6 +48,25 @@ class AgUiRoutingTest {
         assertEquals(5, frames.size)
         assertTrue(frames.all { it.startsWith("data: {\"type\":") })
         assertEquals("data: {\"type\":\"RUN_STARTED\",\"threadId\":\"t\",\"runId\":\"r\"}", frames.first())
+    }
+
+    @Test
+    fun `failures of the event source end the stream with RUN_ERROR`() = testApplication {
+        routing {
+            agUiEvents("/agent") { input ->
+                flow {
+                    emit(RunStartedEvent(input.threadId, input.runId))
+                    throw java.io.IOException("upstream LLM unreachable")
+                }
+            }
+        }
+        val body = client.post("/agent") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"threadId":"t","runId":"r","messages":[]}""")
+        }.bodyAsText()
+
+        val last = body.split("\n\n").last { it.isNotBlank() }
+        assertTrue("\"type\":\"RUN_ERROR\"" in last && "upstream LLM unreachable" in last && "\"code\":\"agent_error\"" in last, last)
     }
 
     @Test

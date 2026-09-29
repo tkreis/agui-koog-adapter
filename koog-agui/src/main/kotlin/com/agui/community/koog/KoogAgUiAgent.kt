@@ -31,7 +31,10 @@ public data class AgUiAgentConfig(
     /** Expose `input.state` to the model and let it replace the state with the [stateToolName] tool. */
     val shareState: Boolean = false,
     val stateToolName: String = "update_state",
-    /** Instructions appended after the state JSON in the system message; defaults to [defaultStatePrompt]. */
+    /**
+     * Instructions appended after the state JSON in the system message; defaults to [defaultStatePrompt].
+     * Note: `copy(stateToolName = …)` keeps the old prompt; pass `statePrompt` too when renaming the tool.
+     */
     val statePrompt: String = defaultStatePrompt(stateToolName),
     /** Include `input.context` as a system message. */
     val includeContext: Boolean = true,
