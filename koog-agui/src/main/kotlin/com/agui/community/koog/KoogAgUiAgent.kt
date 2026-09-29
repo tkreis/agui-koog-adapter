@@ -31,11 +31,8 @@ public data class AgUiAgentConfig(
     /** Expose `input.state` to the model and let it replace the state with the [stateToolName] tool. */
     val shareState: Boolean = false,
     val stateToolName: String = "update_state",
-    /**
-     * Instructions appended after the state JSON in the system message; defaults to [defaultStatePrompt].
-     * Note: `copy(stateToolName = …)` keeps the old prompt; pass `statePrompt` too when renaming the tool.
-     */
-    val statePrompt: String = defaultStatePrompt(stateToolName),
+    /** Instructions appended after the state JSON in the system message; `null` uses [defaultStatePrompt]. */
+    val statePrompt: String? = null,
     /** Include `input.context` as a system message. */
     val includeContext: Boolean = true,
     /** Maximum number of LLM turns per run (each backend tool round trip is one turn). */
@@ -161,7 +158,7 @@ public class KoogAgUiAgent(
         if (config.includeContext && input.context.isNotEmpty()) {
             system(input.context.joinToString("\n", "Context provided by the application:\n") { "- ${it.description}: ${it.value}" })
         }
-        if (config.shareState) system("Current shared state:\n$state\n\n${config.statePrompt}")
+        if (config.shareState) system("Current shared state:\n$state\n\n${config.statePrompt ?: AgUiAgentConfig.defaultStatePrompt(config.stateToolName)}")
         addAll(input.messages.toKoogMessages())
     }
 

@@ -110,7 +110,7 @@ One `AgUiStreamTranslator` per LLM turn, one fresh assistant `messageId` per tur
 | `ToolCallDelta` (new call) | close open text, `TOOL_CALL_START(toolCallId, toolCallName, parentMessageId)`; content → `TOOL_CALL_ARGS` |
 | `ToolCallComplete` | `TOOL_CALL_END` (or START/ARGS/END if no delta was seen); a missing id is synthesised |
 | `End` | close anything still open |
-| state tool call (`update_state`) | no `TOOL_CALL_*`; after the turn: `STATE_SNAPSHOT(snapshot)` |
+| state tool call (`update_state`) | no `TOOL_CALL_*`; after the turn: `STATE_SNAPSHOT(snapshot)` if the arguments hold a valid state |
 
 ### 4.3 Run loop
 
