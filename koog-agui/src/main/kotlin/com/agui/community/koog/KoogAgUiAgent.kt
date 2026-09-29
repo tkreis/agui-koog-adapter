@@ -203,6 +203,6 @@ private class MaxTurnsReachedException(maxTurns: Int) :
  * so provider or infrastructure errors do not leak to the browser by default.
  */
 public fun Throwable.toRunErrorEvent(includeDetails: Boolean = false): RunErrorEvent = when (this) {
-    is MaxTurnsReachedException -> RunErrorEvent(message ?: "Turn limit reached", RunErrorCodes.MAX_TURNS)
-    else -> RunErrorEvent(if (includeDetails) message ?: "Agent run failed" else "Agent run failed", RunErrorCodes.AGENT_ERROR)
+    is MaxTurnsReachedException -> RunErrorEvent(message!!, RunErrorCodes.MAX_TURNS)
+    else -> RunErrorEvent(message?.takeIf { includeDetails } ?: "Agent run failed", RunErrorCodes.AGENT_ERROR)
 }

@@ -162,7 +162,7 @@ val events: Flow<AgUiEvent> = agent.run(input: RunAgentInput)
 - `AgUiEvent` sealed hierarchy + `RunAgentInput`, `AgUiMessage`, `AgUiTool` wire model (own, lean, lenient
   decoding; the community Kotlin SDK `kotlin-core` 0.4.1 was evaluated and rejected because it lags spec 1.0:
   it fails to decode `reasoning` messages and tools without `parameters`, and rejects empty text deltas).
-- `SseEncoder.encode(event): String` → `data: <json>\n\n`; `Throwable.toRunErrorEvent()` for terminal errors.
+- `SseEncoder.encode(event): String` → `data: <json>\n\n`; `Throwable.toRunErrorEvent(includeDetails = false)` for terminal errors (the Ktor route never includes details).
 - Building blocks are public for custom strategies: `toKoogMessages()`, `JsonSchemaToolDescriptors`,
   `AgUiStreamTranslator`.
 
