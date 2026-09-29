@@ -6,6 +6,7 @@ ktor = "3.3.3"
 kotlinx-serialization = "1.10.0"
 kotlinx-coroutines = "1.10.2"
 logback = "1.5.13"
+kotlin-logging = "8.0.01"
 
 [libraries]
 koog-agents-core = { module = "ai.koog:agents-core", version.ref = "koog" }
@@ -21,6 +22,7 @@ ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor"
 ktor-server-cors = { module = "io.ktor:ktor-server-cors", version.ref = "ktor" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+kotlin-logging = { module = "io.github.oshai:kotlin-logging", version.ref = "kotlin-logging" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

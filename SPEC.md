@@ -136,7 +136,8 @@ RUN_FINISHED(threadId, runId, outcome = {type:"success", pendingToolCallIds?})
   "tool not found" failure and can recover.
 - Loop cap (`maxTurns`, default 10) reached without a final answer → `RUN_ERROR(code = "max_turns")`.
   (Koog's `maxAgentIterations` does not bound functional strategies, so `maxTurns` is the only guard.)
-- Any exception → `RUN_ERROR(message, code = "agent_error")` and end the stream (the protocol does not require closing open messages first).
+- Any exception → `RUN_ERROR(code = "agent_error")` and end the stream (the protocol does not require closing open messages first).
+  The exception is logged server-side; its text reaches the client only with `exposeErrorDetails = true`.
 - Reasoning, text and tool calls are appended to the Koog prompt in arrival order, including provider reasoning
   signatures (`MessagePart.Reasoning.encrypted`), so reasoning models can continue a backend-tool loop.
 - Client disconnect cancels the coroutine; the Koog agent is cancelled with it.
@@ -151,7 +152,7 @@ val agent = KoogAgUiAgent(
     model = OpenAIModels.Chat.GPT4_1Mini,
     toolRegistry = ToolRegistry { tool(GetWeatherTool) },   // backend tools
     systemPrompt = "You are a helpful assistant.",
-    config = AgUiAgentConfig(shareState = true, maxTurns = 10),   // also: stateToolName, statePrompt, includeContext
+    config = AgUiAgentConfig(shareState = true, maxTurns = 10),   // also: stateToolName, statePrompt, includeContext, exposeErrorDetails
     installFeatures = { /* any Koog feature */ },
 )
 val events: Flow<AgUiEvent> = agent.run(input: RunAgentInput)

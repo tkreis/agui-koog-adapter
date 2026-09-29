@@ -13,6 +13,7 @@ dependencies {
     api(libs.koog.agents.tools)
     api(libs.kotlinx.serialization.json)
     api(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlin.logging)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)

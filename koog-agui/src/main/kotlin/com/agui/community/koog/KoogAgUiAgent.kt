@@ -24,6 +24,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.UUID
 
 /** Behaviour switches for [KoogAgUiAgent]. */
@@ -37,6 +38,8 @@ public data class AgUiAgentConfig(
     val includeContext: Boolean = true,
     /** Maximum number of LLM turns per run (each backend tool round trip is one turn). */
     val maxTurns: Int = 10,
+    /** Put exception messages into `RUN_ERROR`. Off by default: failures are logged, the client gets a generic message. */
+    val exposeErrorDetails: Boolean = false,
 ) {
     public companion object {
         public fun defaultStatePrompt(stateToolName: String): String =
@@ -77,7 +80,8 @@ public class KoogAgUiAgent(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            send(e.toRunErrorEvent())
+            logger.error(e) { "AG-UI run ${input.runId} failed" }
+            send(e.toRunErrorEvent(includeDetails = config.exposeErrorDetails))
         }
     }
 
@@ -179,6 +183,10 @@ public class KoogAgUiAgent(
         val decoded = if (state is JsonPrimitive && state.isString) AgUiJson.parseToJsonElement(state.content) else state
         decoded?.takeIf { it is JsonObject || it is JsonArray }
     }.getOrNull()
+
+    private companion object {
+        private val logger = KotlinLogging.logger { }
+    }
 }
 
 /** Values of [RunErrorEvent.code] emitted by this adapter. */
@@ -190,8 +198,11 @@ public object RunErrorCodes {
 private class MaxTurnsReachedException(maxTurns: Int) :
     IllegalStateException("Stopped after $maxTurns LLM turns without a final answer")
 
-/** Maps a failed run to its terminal AG-UI event. */
-public fun Throwable.toRunErrorEvent(): RunErrorEvent = RunErrorEvent(
-    message = message ?: "Agent run failed",
-    code = if (this is MaxTurnsReachedException) RunErrorCodes.MAX_TURNS else RunErrorCodes.AGENT_ERROR,
-)
+/**
+ * Maps a failed run to its terminal AG-UI event. Exception text is only included when [includeDetails] is set,
+ * so provider or infrastructure errors do not leak to the browser by default.
+ */
+public fun Throwable.toRunErrorEvent(includeDetails: Boolean = false): RunErrorEvent = when (this) {
+    is MaxTurnsReachedException -> RunErrorEvent(message ?: "Turn limit reached", RunErrorCodes.MAX_TURNS)
+    else -> RunErrorEvent(if (includeDetails) message ?: "Agent run failed" else "Agent run failed", RunErrorCodes.AGENT_ERROR)
+}

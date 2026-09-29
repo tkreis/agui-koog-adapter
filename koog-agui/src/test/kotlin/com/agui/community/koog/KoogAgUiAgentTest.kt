@@ -220,7 +220,16 @@ class KoogAgUiAgentTest {
 
         assertValidAgUiSequence(events)
         assertIs<RunStartedEvent>(events.first())
-        assertEquals(RunErrorCodes.AGENT_ERROR, assertIs<RunErrorEvent>(events.last()).code)
+        val error = assertIs<RunErrorEvent>(events.last())
+        assertEquals(RunErrorCodes.AGENT_ERROR, error.code)
+        assertEquals("Agent run failed", error.message) // exception text stays server-side by default
+    }
+
+    @Test
+    fun `error details are exposed only when configured`() = runTest {
+        val events = agent(ScriptedExecutor(), AgUiAgentConfig(exposeErrorDetails = true))
+            .run(input(UserMessage("u1", "hi"))).toList()
+        assertTrue("No scripted turn" in assertIs<RunErrorEvent>(events.last()).message)
     }
 
     @Test

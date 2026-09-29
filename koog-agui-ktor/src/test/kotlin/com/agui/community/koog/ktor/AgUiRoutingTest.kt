@@ -66,7 +66,8 @@ class AgUiRoutingTest {
         }.bodyAsText()
 
         val last = body.split("\n\n").last { it.isNotBlank() }
-        assertTrue("\"type\":\"RUN_ERROR\"" in last && "upstream LLM unreachable" in last && "\"code\":\"agent_error\"" in last, last)
+        assertTrue("\"type\":\"RUN_ERROR\"" in last && "\"code\":\"agent_error\"" in last, last)
+        assertTrue("upstream LLM unreachable" !in last, "exception text must not reach the client: $last")
     }
 
     @Test

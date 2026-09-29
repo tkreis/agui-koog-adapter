@@ -10,6 +10,7 @@ kotlin {
 dependencies {
     api(project(":koog-agui"))
     api(libs.ktor.server.core)
+    implementation(libs.kotlin.logging)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.ktor.server.test.host)

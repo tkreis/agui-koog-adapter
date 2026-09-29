@@ -79,7 +79,7 @@ fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8787
     embeddedServer(Netty, port = port) {
         install(CORS) {
-            anyHost()
+            anyHost() // demo only; restrict to your web origin in production
             allowMethod(HttpMethod.Post)
             allowHeader(HttpHeaders.ContentType)
             allowHeader(HttpHeaders.Accept)

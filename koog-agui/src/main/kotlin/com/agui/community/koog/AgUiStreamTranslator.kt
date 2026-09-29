@@ -4,6 +4,7 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /** A tool call the model made during one turn, with the id announced to the AG-UI client. */
 public data class CollectedToolCall(
@@ -182,7 +183,10 @@ public class AgUiStreamTranslator(
         val call = pending ?: return
         pending = null
         // A call that never received a name cannot be executed or answered; drop it.
-        val name = call.name?.takeIf { it.isNotEmpty() } ?: return
+        val name = call.name?.takeIf { it.isNotEmpty() } ?: run {
+            logger.warn { "Dropping tool call ${call.id} without a name (args: ${call.args.length} chars)" }
+            return
+        }
         announce(call)
         if (call.started) add(ToolCallEndEvent(call.id))
         val collected = CollectedToolCall(call.id, name, call.args.toString().ifBlank { "{}" })
@@ -198,6 +202,10 @@ public class AgUiStreamTranslator(
         closeToolCall()
         val id = providerId?.takeUnless { it.isBlank() }
         return PendingCall(id, id ?: newId(), index).also { pending = it }
+    }
+
+    private companion object {
+        private val logger = KotlinLogging.logger { }
     }
 
     private class PendingCall(val providerId: String?, val id: String, val index: Int?) {

@@ -20,7 +20,10 @@ import io.ktor.http.CacheControl
 import io.ktor.utils.io.ClosedByteChannelException
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CancellationException
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
+
+private val logger = KotlinLogging.logger { }
 
 /**
  * Exposes an AG-UI endpoint: `POST path` with a `RunAgentInput` JSON body, answered with a
@@ -56,6 +59,7 @@ public fun Route.agUiEvents(path: String, events: suspend ApplicationCall.(RunAg
                 // Client disconnected: nothing left to write to.
             } catch (e: Throwable) {
                 // Event sources other than KoogAgUiAgent may fail without emitting RUN_ERROR themselves.
+                logger.error(e) { "AG-UI run ${input.runId} failed while streaming" }
                 writeStringUtf8(SseEncoder.encode(e.toRunErrorEvent()))
                 flush()
             }
