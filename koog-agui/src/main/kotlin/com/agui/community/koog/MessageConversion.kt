@@ -12,7 +12,7 @@ import ai.koog.prompt.message.ResponseMetaInfo
  * - `user` → [Message.User] with one [MessagePart.Text] per content part (non-text parts become placeholders)
  * - `assistant` → [Message.Assistant] with optional text and [MessagePart.Tool.Call]s
  * - consecutive `tool` messages → one [Message.User] holding [MessagePart.Tool.Result]s
- * - other roles are dropped
+ * - `activity` and other roles are dropped
  */
 public fun List<AgUiMessage>.toKoogMessages(): List<Message> {
     val toolNames = mutableMapOf<String, String>()
@@ -50,7 +50,7 @@ public fun List<AgUiMessage>.toKoogMessages(): List<Message> {
                 output = message.error?.let { "Error: $it" } ?: message.content,
                 isError = message.error != null,
             )
-            is UnknownMessage -> Unit
+            is ActivityMessage, is UnknownMessage -> Unit
         }
     }
     flushResults()

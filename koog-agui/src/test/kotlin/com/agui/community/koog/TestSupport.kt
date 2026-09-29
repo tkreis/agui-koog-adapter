@@ -77,7 +77,7 @@ fun counter(prefix: String = "id"): () -> String {
 }
 
 /**
- * Checks the ordering rules that `@ag-ui/client`'s verifier enforces
+ * Checks the ordering rules that `@ag-ui/client`'s verifier enforces for one run
  * (sdks/typescript/packages/client/src/verify/verify.ts).
  */
 fun assertValidAgUiSequence(events: List<AgUiEvent>) {
@@ -88,8 +88,11 @@ fun assertValidAgUiSequence(events: List<AgUiEvent>) {
     val openTools = mutableSetOf<String>()
     val openReasoning = mutableSetOf<String>()
     var finished = false
+    var errored = first is RunErrorEvent
     for (event in events.drop(1)) {
-        if (finished) fail("event after terminal event: $event")
+        if (errored) fail("event after RUN_ERROR: $event")
+        // After RUN_FINISHED only RUN_ERROR (or a new run) may follow.
+        if (finished && event !is RunErrorEvent) fail("event after RUN_FINISHED: $event")
         when (event) {
             is RunStartedEvent -> fail("second RUN_STARTED while run active")
             is TextMessageStartEvent -> assertTrue(openText.add(event.messageId), "text ${event.messageId} already open")
@@ -101,15 +104,18 @@ fun assertValidAgUiSequence(events: List<AgUiEvent>) {
             is ReasoningMessageStartEvent -> assertTrue(openReasoning.add(event.messageId))
             is ReasoningMessageContentEvent -> assertTrue(event.messageId in openReasoning)
             is ReasoningMessageEndEvent -> assertTrue(openReasoning.remove(event.messageId))
+            // Applies to every outcome, including an interrupt.
             is RunFinishedEvent -> {
                 assertTrue(openText.isEmpty() && openTools.isEmpty() && openReasoning.isEmpty(), "RUN_FINISHED with open items")
                 finished = true
             }
-            is RunErrorEvent -> finished = true
+            is RunErrorEvent -> errored = true
+            // Not tied to open messages: allowed anywhere inside a run, also while text is streaming.
+            is CustomEvent, is ActivitySnapshotEvent, is MessagesSnapshotEvent -> Unit
             else -> Unit
         }
     }
-    assertTrue(finished, "run did not end with RUN_FINISHED or RUN_ERROR")
+    assertTrue(finished || errored, "run did not end with RUN_FINISHED or RUN_ERROR")
 }
 
 fun Message.text(): String =

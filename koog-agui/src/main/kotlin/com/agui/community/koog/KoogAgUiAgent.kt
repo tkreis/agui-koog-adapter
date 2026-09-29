@@ -57,6 +57,9 @@ public data class AgUiAgentConfig(
  * executes it, then starts a new run with the result. A client tool named like a backend tool is ignored
  * (the backend tool wins).
  *
+ * This agent never interrupts a run, so it ignores [RunAgentInput.resume]; event sources that do interrupt
+ * read the entries themselves and finish with [RunOutcome.Interrupt].
+ *
  * @param installFeatures installs Koog features (tracing, event handlers, …) on the per-run agent.
  */
 public class KoogAgUiAgent(

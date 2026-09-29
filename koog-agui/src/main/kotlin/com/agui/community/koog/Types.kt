@@ -2,6 +2,7 @@ package com.agui.community.koog
 
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -26,7 +27,12 @@ public val AgUiJson: Json = Json {
     encodeDefaults = true
 }
 
-/** Body of an AG-UI run request. */
+/**
+ * Body of an AG-UI run request.
+ *
+ * @property resume answers to the interrupts that ended a previous run ([RunOutcome.Interrupt]), when this
+ *   run continues from one.
+ */
 @Serializable
 public data class RunAgentInput(
     val threadId: String,
@@ -37,7 +43,32 @@ public data class RunAgentInput(
     val state: JsonElement? = null,
     val forwardedProps: JsonElement? = null,
     val parentRunId: String? = null,
+    val resume: List<ResumeEntry> = emptyList(),
 )
+
+/**
+ * An answer to one [AgUiInterrupt], sent on the run that continues from it.
+ *
+ * @property payload the answer the interrupt asked for; any JSON value.
+ * @property metadata envelope information about the answer (signatures, routing keys), as opposed to [payload].
+ */
+@Serializable
+public data class ResumeEntry(
+    val interruptId: String,
+    val status: ResumeStatus,
+    val payload: JsonElement? = null,
+    val metadata: JsonObject? = null,
+)
+
+/** Whether an interrupt was answered or abandoned. */
+@Serializable
+public enum class ResumeStatus {
+    @SerialName("resolved")
+    Resolved,
+
+    @SerialName("cancelled")
+    Cancelled,
+}
 
 /** A tool implemented by the client (frontend tool). */
 @Serializable
@@ -70,13 +101,17 @@ public data class AgUiFunctionCall(
 )
 
 /**
- * A conversation message. Decoding is lenient: roles this library does not understand
- * (for example `activity`) decode to [UnknownMessage] instead of failing the run.
+ * A conversation message, discriminated by [role]. Decoding is lenient: roles this library does not model
+ * (for example `reasoning`) and malformed `activity` messages decode to [UnknownMessage] instead of failing
+ * the run. Encoding writes each message with its [role], so messages can be sent in a [MessagesSnapshotEvent].
  */
 @Serializable(with = AgUiMessageSerializer::class)
 public sealed interface AgUiMessage {
     public val id: String
     public val role: String
+
+    /** Extra information attached to the message. Omitted when `null`. */
+    public val metadata: JsonObject?
 }
 
 @Serializable
@@ -84,6 +119,7 @@ public data class SystemMessage(
     override val id: String,
     val content: String,
     val name: String? = null,
+    override val metadata: JsonObject? = null,
     override val role: String = "system",
 ) : AgUiMessage
 
@@ -92,6 +128,7 @@ public data class DeveloperMessage(
     override val id: String,
     val content: String,
     val name: String? = null,
+    override val metadata: JsonObject? = null,
     override val role: String = "developer",
 ) : AgUiMessage
 
@@ -101,9 +138,11 @@ public data class UserMessage(
     override val id: String,
     val content: JsonElement,
     val name: String? = null,
+    override val metadata: JsonObject? = null,
     override val role: String = "user",
 ) : AgUiMessage {
-    public constructor(id: String, content: String) : this(id, JsonPrimitive(content))
+    public constructor(id: String, content: String, name: String? = null, metadata: JsonObject? = null) :
+        this(id, JsonPrimitive(content), name, metadata)
 }
 
 @Serializable
@@ -112,6 +151,7 @@ public data class AssistantMessage(
     val content: String? = null,
     val toolCalls: List<AgUiToolCall>? = null,
     val name: String? = null,
+    override val metadata: JsonObject? = null,
     override val role: String = "assistant",
 ) : AgUiMessage
 
@@ -121,15 +161,34 @@ public data class ToolMessage(
     val toolCallId: String,
     val content: String = "",
     val error: String? = null,
+    override val metadata: JsonObject? = null,
     override val role: String = "tool",
 ) : AgUiMessage
 
-/** Any message with a role this library does not model; kept as raw JSON. */
+/**
+ * Structured progress that is not conversation content (for example a step the client renders as its own
+ * widget). Usually created and updated with [ActivitySnapshotEvent]; [content] is open by key.
+ */
+@Serializable
+public data class ActivityMessage(
+    override val id: String,
+    val activityType: String,
+    val content: JsonObject,
+    override val metadata: JsonObject? = null,
+    override val role: String = "activity",
+) : AgUiMessage
+
+/**
+ * Any message this library does not model. Only [id] and [role] are kept (nothing else is read, so it never
+ * fails decoding); it is not meant to be sent back to a client.
+ */
 @Serializable
 public data class UnknownMessage(
     override val id: String = "",
     override val role: String = "",
-) : AgUiMessage
+) : AgUiMessage {
+    override val metadata: JsonObject? get() = null
+}
 
 internal object AgUiMessageSerializer : JsonContentPolymorphicSerializer<AgUiMessage>(AgUiMessage::class) {
     override fun selectDeserializer(element: JsonElement): DeserializationStrategy<AgUiMessage> =
@@ -139,9 +198,13 @@ internal object AgUiMessageSerializer : JsonContentPolymorphicSerializer<AgUiMes
             "user" -> UserMessage.serializer()
             "assistant" -> AssistantMessage.serializer()
             "tool" -> ToolMessage.serializer()
+            "activity" -> if (element.isWellFormedActivity()) ActivityMessage.serializer() else UnknownMessage.serializer()
             else -> UnknownMessage.serializer()
         }
 }
+
+private fun JsonElement.isWellFormedActivity(): Boolean =
+    (jsonObject["activityType"] as? JsonPrimitive)?.isString == true && jsonObject["content"] is JsonObject
 
 /** Text of each user content part; non-text parts are replaced by a short placeholder. */
 public fun UserMessage.textParts(): List<String> = when (val c = content) {

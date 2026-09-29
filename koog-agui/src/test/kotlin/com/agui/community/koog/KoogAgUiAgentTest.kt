@@ -204,6 +204,16 @@ class KoogAgUiAgentTest {
     }
 
     @Test
+    fun `resume entries are accepted as data and do not change the run`() = runTest {
+        val plain = agent(ScriptedExecutor(textTurn("ok"))).run(input(UserMessage("u1", "hi"))).toList()
+        val resumed = agent(ScriptedExecutor(textTurn("ok")))
+            .run(input(UserMessage("u1", "hi")).copy(resume = listOf(ResumeEntry("i1", ResumeStatus.Resolved)))).toList()
+
+        assertValidAgUiSequence(resumed)
+        assertEquals(plain, resumed)
+    }
+
+    @Test
     fun `context is passed to the model`() = runTest {
         val executor = ScriptedExecutor(textTurn("Hi Alex"))
         agent(executor).run(

@@ -8,14 +8,39 @@ Any AG-UI frontend (the `@ag-ui/client` `HttpAgent`, CopilotKit, the AG-UI dojo)
 - frontend tools (generative UI, human in the loop),
 - shared state.
 
+The wire model also covers the AG-UI 1.0 types the adapter itself does not emit, for your own event sources:
+
+- interrupt and cancelled run outcomes, and `resume` entries,
+- `CUSTOM`, `ACTIVITY_SNAPSHOT` and `MESSAGES_SNAPSHOT` events,
+- `timestamp` and `metadata` on every event.
+
 See [SPEC.md](SPEC.md) for the design, the protocol mapping and how it compares to the Spring AI integration.
 
 | Module | Contents |
 |---|---|
-| `koog-agui` | Wire model (`RunAgentInput`, `AgUiEvent`, `AgUiJson`, `SseEncoder`), `KoogAgUiAgent`, `AgUiStreamTranslator`, AG-UI → Koog message and JSON-schema conversion |
+| `koog-agui` | Wire model (`RunAgentInput`, `AgUiEvent`, `AgUiMessage`, `RunOutcome`, `AgUiJson`, `SseEncoder`), `KoogAgUiAgent`, `AgUiStreamTranslator`, AG-UI → Koog message and JSON-schema conversion |
 | `koog-agui-ktor` | `Route.agUi(path) { agent }`: POST endpoint that streams SSE |
 | `example/server` | Ktor + OpenAI demo agent: backend tool `get_weather`, shared todo state |
 | `example/web` | Vite/React client on `@ag-ui/client` 1.0: renders weather cards and haiku cards, applies background changes, shows the todo list; `scripts/e2e.ts` runs a live protocol check |
+
+## Install
+
+The library is published through [JitPack](https://jitpack.io), by tag or by commit hash:
+
+```kotlin
+repositories {
+    mavenCentral()
+    maven("https://jitpack.io")
+}
+
+dependencies {
+    implementation("com.github.tkreis.agui-koog-adapter:koog-agui:<commit-hash>")
+    // or, with the Ktor route (brings koog-agui with it):
+    implementation("com.github.tkreis.agui-koog-adapter:koog-agui-ktor:<commit-hash>")
+}
+```
+
+`./gradlew publishToMavenLocal` installs both modules as `com.ag-ui.community:<module>:0.1.0-SNAPSHOT`.
 
 ## Usage
 
@@ -68,7 +93,7 @@ Optional environment variables:
 - errors and the turn cap,
 - translator edge cases,
 - JSON schema conversion,
-- the wire format,
+- the wire format: round trips of every event, interrupt and resume shapes, snapshots, no explicit nulls,
 - SSE framing through Ktor.
 
 During development, the upstream `ag-ui` and `koog` repositories were cloned into a git-ignored `vendor/` folder for reference. The build does not need them.

@@ -1,7 +1,9 @@
 # Spec: AG-UI protocol support for Koog
 
-Status: v1 implemented in this repository (`koog-agui`, `koog-agui-ktor`, `example/`). Verified 2026-09-29: 28 unit tests green; live e2e (5 scenarios, gpt-4.1-mini) green through `@ag-ui/client` 1.0.0 verifier; browser rendering checked.
-Targets: AG-UI protocol **1.0** (`@ag-ui/client` 1.0.0), Koog **1.3.0**, Kotlin 2.3, JVM 21.
+Status: v1 implemented in this repository (`koog-agui`, `koog-agui-ktor`, `example/`). Verified 2026-09-29: live e2e (5 scenarios, gpt-4.1-mini) green through `@ag-ui/client` 1.0.0 verifier; browser rendering checked.
+Later on 2026-09-29 the wire model was extended with interrupts/resume, `CUSTOM`, `ACTIVITY_SNAPSHOT`, `MESSAGES_SNAPSHOT` and the
+base event fields, checked against the `@ag-ui/core` 1.0.1 typings; 42 unit tests green. Published through JitPack (§5.1).
+Targets: AG-UI protocol **1.0** (`@ag-ui/client` 1.0.0, `@ag-ui/core` 1.0.1), Koog **1.3.0**, Kotlin 2.3, JVM 21.
 
 ## 1. Goal
 
@@ -10,8 +12,10 @@ A Koog agent should be usable as an AG-UI backend, so any AG-UI frontend (Copilo
 let the model call **frontend tools** (tools implemented in the browser, used for generative UI and
 human-in-the-loop), and share state between agent and UI.
 
-Non-goals for v1: server-side thread persistence, protobuf transport, `resume`/interrupt outcomes,
-activity events, subagent events, predictive state updates.
+Non-goals for v1: server-side thread persistence, protobuf transport, subagent events, predictive state updates,
+`ACTIVITY_DELTA`, and interrupt *behaviour* in `KoogAgUiAgent`. Interrupts, resume entries, activity messages,
+`MESSAGES_SNAPSHOT` and `CUSTOM` are modelled as wire types so other event sources can use them (§5), but
+`KoogAgUiAgent` never emits them and ignores `RunAgentInput.resume`.
 
 ## 2. How AG-UI works (the parts that matter)
 
@@ -25,12 +29,21 @@ activity events, subagent events, predictive state updates.
   `assistant` (`content?`, `toolCalls?[{id, type:"function", function:{name, arguments}}]`),
   `tool` (`toolCallId`, `content`, `error?`), `reasoning`, `activity`.
 - Events are discriminated by `type`. Absent optional fields must be **omitted**, not `null`
-  (the client's zod schemas reject `null`).
+  (the client's zod schemas reject `null`). Every event may carry `timestamp` (ms since epoch by convention)
+  and `metadata` (an object; JSON `null` values inside it are data and are kept). `rawEvent` is not modelled.
+- `RUN_FINISHED` carries an optional `result` (any JSON) and `outcome`: `success` (`pendingToolCallIds?`),
+  `interrupt` (`interrupts`, at least one: `{id, reason, message?, toolCallId?, responseSchema?, expiresAt?, metadata?}`)
+  or `cancelled`. Absent means success. A run that continues from an interrupt sends
+  `resume: [{interruptId, status: "resolved"|"cancelled", payload?, metadata?}]` in its `RunAgentInput`.
+- `ACTIVITY_SNAPSHOT(messageId, activityType, content, replace?)` creates or overwrites an `activity` message
+  (`replace:false` leaves an existing one untouched); `MESSAGES_SNAPSHOT(messages)` declares the producer's messages;
+  `CUSTOM(name, value)` is the application's own event.
 - Client-side verifier rules (enforced by `@ag-ui/client`):
   - first event is `RUN_STARTED` (or `RUN_ERROR`); nothing but `RUN_ERROR`/new `RUN_STARTED` after `RUN_FINISHED`;
   - `TEXT_MESSAGE_START` → `CONTENT*` → `END` per `messageId`; `TOOL_CALL_START` → `ARGS*` → `END` per `toolCallId`;
   - `RUN_FINISHED` fails if any text message, tool call, reasoning message or step is still open;
-  - `TOOL_CALL_RESULT` is not checked against a prior start; ended tool calls without a result are allowed.
+  - `TOOL_CALL_RESULT` is not checked against a prior start; ended tool calls without a result are allowed;
+  - `CUSTOM`, `ACTIVITY_SNAPSHOT` and `MESSAGES_SNAPSHOT` are not tied to open messages and may arrive while text streams.
 - Frontend tools: the client advertises `tools` (name, description, JSON-schema `parameters`). If the model
   calls one, the agent streams `TOOL_CALL_START/ARGS/END`, **must not** emit `TOOL_CALL_RESULT`, and finishes the
   run (`RUN_FINISHED`, outcome `success` with `pendingToolCallIds`). The client runs the tool (usually renders UI)
@@ -159,7 +172,11 @@ val events: Flow<AgUiEvent> = agent.run(input: RunAgentInput)
 ```
 
 - `AgUiJson`: the kotlinx `Json` instance (unknown keys ignored, `explicitNulls = false`, `type` / `role` discriminators).
-- `AgUiEvent` sealed hierarchy + `RunAgentInput`, `AgUiMessage`, `AgUiTool` wire model (own, lean, lenient
+- `AgUiEvent` sealed hierarchy + `RunAgentInput`, `AgUiMessage`, `AgUiTool` wire model. Beyond what the adapter emits
+  it covers `RunOutcome.Interrupt` / `RunOutcome.Cancelled` with `AgUiInterrupt`, `RunAgentInput.resume` (`ResumeEntry`,
+  `ResumeStatus`), `CustomEvent`, `ActivitySnapshotEvent`, `MessagesSnapshotEvent`, `ActivityMessage`, and
+  `timestamp` / `metadata` on every event and `metadata` on every message. Messages encode with their `role`, so they
+  can be sent in a snapshot. (Own, lean, lenient
   decoding; the community Kotlin SDK `kotlin-core` 0.4.1 was evaluated and rejected because it lags spec 1.0:
   it fails to decode `reasoning` messages and tools without `parameters`, and rejects empty text deltas).
 - `SseEncoder.encode(event): String` → `data: <json>\n\n`; `Throwable.toRunErrorEvent(includeDetails = false)` for terminal errors (the Ktor route never includes details).
@@ -177,6 +194,13 @@ routing {
 Spring (phase 2, not implemented here): a `KoogAgUiController` in the style of the Spring AI starter,
 `Flow<AgUiEvent>.asFlux()` mapped to `ServerSentEvent<String>`, auto-configured from Koog's
 `koog-spring-boot-starter` `PromptExecutor` bean.
+
+### 5.1 Publishing
+
+Both library modules apply `maven-publish` (jar, sources jar, empty javadoc jar, POM with license and SCM).
+`jitpack.yml` builds with OpenJDK 21 and `./gradlew publishToMavenLocal -x test`. Under JitPack (`JITPACK=true`)
+the group becomes `com.github.tkreis.agui-koog-adapter` and the version the tag or commit, so the POM dependency of
+`koog-agui-ktor` on `koog-agui` resolves there too; locally it stays `com.ag-ui.community:*:0.1.0-SNAPSHOT`.
 
 ## 6. Example and verification
 
@@ -205,6 +229,7 @@ Verification layers:
 
 - Upstream location: `ag-ui/integrations/community/koog` (Kotlin adapter + tiny TS `HttpAgent` subclass + dojo
   registration) vs. a Koog module `agents-features-agui`. The code is dependency-light so either works.
-- `STATE_DELTA` generation (needs a JSON Patch diff), `MESSAGES_SNAPSHOT`, `resume`/interrupt outcome for
-  human-in-the-loop on backend tools, activity events.
+- `STATE_DELTA` generation (needs a JSON Patch diff); emitting `MESSAGES_SNAPSHOT` or activity events from
+  `KoogAgUiAgent`; human-in-the-loop on backend tools through the interrupt outcome (the wire types exist, the
+  run-loop semantics do not).
 - Multimodal user parts → `MessagePart.Attachment`.

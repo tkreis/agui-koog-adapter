@@ -1,7 +1,10 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    `maven-publish`
 }
+
+description = "AG-UI protocol wire model and Koog agent adapter"
 
 kotlin {
     jvmToolchain(21)
