@@ -1,0 +1,7 @@
+.gradle/
+build/
+.kotlin/
+node_modules/
+dist/
+vendor/
+.idea/

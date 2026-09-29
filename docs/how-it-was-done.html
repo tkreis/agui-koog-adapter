@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koog × AG-UI: how it was done</title>
+<style>
+  :root { --ink:#1c1d21; --muted:#5b6170; --line:#e3e5ea; --bg:#f6f7f9; --card:#fff; --green:#15803d; --amber:#b45309; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; color:var(--ink); background:var(--bg); -webkit-font-smoothing:antialiased; }
+  main { max-width:980px; margin:0 auto; padding:40px 24px 80px; }
+  h1 { font-size:28px; margin:0 0 4px; }
+  h2 { font-size:19px; margin:40px 0 12px; }
+  p.lead { color:var(--muted); margin:0 0 24px; }
+  code { font:13px ui-monospace,SFMono-Regular,Menlo,monospace; background:#eef0f4; padding:1px 5px; border-radius:4px; }
+  .grid { display:grid; gap:12px; }
+  .stats { grid-template-columns:repeat(4,1fr); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .stat b { display:block; font-size:28px; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f0f2f5; font-size:13px; color:var(--muted); font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .flow { display:flex; align-items:stretch; gap:10px; flex-wrap:wrap; }
+  .box { flex:1; min-width:150px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .box h4 { margin:0 0 6px; font-size:14px; }
+  .box p { margin:0; font-size:13px; color:var(--muted); }
+  .arrow { align-self:center; color:var(--muted); font-size:20px; }
+  .box.koog { border-color:#c7d2fe; background:#eef2ff; }
+  .box.new { border-color:#bbf7d0; background:#f0fdf4; }
+  ol.seq { margin:0; padding-left:20px; }
+  ol.seq li { margin:4px 0; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; padding:1px 7px; border-radius:999px; margin-right:6px; }
+  .t-big { background:#dbeafe; color:#1d4ed8; }
+  .t-fix { background:#fef3c7; color:var(--amber); }
+  .t-trim { background:#dcfce7; color:var(--green); }
+  ul.clean { margin:0; padding-left:18px; }
+  ul.clean li { margin:5px 0; }
+  img.shot { width:100%; border-radius:12px; border:1px solid var(--line); display:block; }
+  .ok { color:var(--green); font-weight:600; }
+  footer { margin-top:48px; color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Koog × AG-UI: how it was done</h1>
+  <p class="lead">This page covers the AG-UI protocol adapter for JetBrains Koog: what was built, what had to be worked around, and how it was checked. Date: 29 September 2026.</p>
+
+  <div class="grid stats">
+    <div class="card stat"><b>37</b><span>files created (32 written by hand, plus the Gradle wrapper and the pnpm lockfile)</span></div>
+    <div class="card stat"><b>956</b><span>library lines in 7 files (<code>koog-agui</code> + <code>koog-agui-ktor</code>)</span></div>
+    <div class="card stat"><b>23</b><span>unit tests, no network needed, all green</span></div>
+    <div class="card stat"><b>5 / 5</b><span>live scenarios pass with OpenAI through the official <code>@ag-ui/client</code> verifier</span></div>
+  </div>
+
+  <h2>Files</h2>
+  <table>
+    <tr><th>Area</th><th>Files</th><th class="num">Lines</th></tr>
+    <tr><td><b>Library</b> <code>koog-agui</code></td><td><code>KoogAgUiAgent.kt</code> (run loop), <code>AgUiStreamTranslator.kt</code> (frames to events), <code>Events.kt</code>, <code>Types.kt</code> (wire model), <code>MessageConversion.kt</code>, <code>JsonSchemaToolDescriptors.kt</code></td><td class="num">875</td></tr>
+    <tr><td><b>Library</b> <code>koog-agui-ktor</code></td><td><code>AgUiRouting.kt</code>: <code>Route.agUi(path) { agent }</code></td><td class="num">59</td></tr>
+    <tr><td><b>Tests</b></td><td><code>KoogAgUiAgentTest</code>, <code>WireAndTranslatorTest</code>, <code>TestSupport</code> (scripted LLM, Kotlin port of the verifier rules), <code>AgUiRoutingTest</code></td><td class="num">571</td></tr>
+    <tr><td><b>Example</b></td><td><code>example/server/Main.kt</code> (Ktor + OpenAI), <code>example/web</code> (React on <code>@ag-ui/client</code>), <code>scripts/e2e.ts</code></td><td class="num">562</td></tr>
+    <tr><td><b>Docs</b></td><td><code>SPEC.md</code>, <code>README.md</code>, this page</td><td class="num">≈ 280</td></tr>
+    <tr><td><b>Build</b></td><td><code>settings.gradle.kts</code>, <code>build.gradle.kts</code>, 3 module builds, <code>libs.versions.toml</code>, Vite/TS config, <code>.gitignore</code></td><td class="num">≈ 150</td></tr>
+  </table>
+
+  <h2>How it fits together</h2>
+  <div class="flow">
+    <div class="box"><h4>Browser</h4><p><code>@ag-ui/client</code> <code>HttpAgent</code>. Sends the history, the frontend tools, the state and the context.</p></div>
+    <div class="arrow">→</div>
+    <div class="box new"><h4>koog-agui-ktor</h4><p><code>POST /agent</code>. Decodes <code>RunAgentInput</code> and streams <code>data: {json}\n\n</code>.</p></div>
+    <div class="arrow">→</div>
+    <div class="box new"><h4>KoogAgUiAgent</h4><p>Builds a Koog prompt from the history. Registers frontend tools as descriptors only. Owns the tool loop.</p></div>
+    <div class="arrow">→</div>
+    <div class="box koog"><h4>Koog AIAgent</h4><p>Functional strategy with <code>requestLLMStreaming()</code>. Runs backend tools with <code>executeTool</code>. Features stay installable.</p></div>
+    <div class="arrow">→</div>
+    <div class="box new"><h4>AgUiStreamTranslator</h4><p>Turns each <code>StreamFrame</code> into <code>TEXT_MESSAGE_*</code>, <code>TOOL_CALL_*</code> and <code>REASONING_*</code> events.</p></div>
+  </div>
+
+  <h2>Run loop (one AG-UI request)</h2>
+  <div class="card">
+    <ol class="seq">
+      <li><code>RUN_STARTED</code>, then a <code>STATE_SNAPSHOT</code> if state sharing is on.</li>
+      <li>Stream one LLM turn. Frames are translated and sent live. The assistant message is appended to the Koog prompt.</li>
+      <li>If the turn has no tool calls, stop.</li>
+      <li>For each tool call:
+        <ul>
+          <li><code>update_state</code>: emit <code>STATE_SNAPSHOT</code>. No tool-call events are sent for it.</li>
+          <li>Backend tool: Koog executes it and <code>TOOL_CALL_RESULT</code> is emitted.</li>
+          <li>Frontend tool: mark it pending.</li>
+        </ul>
+      </li>
+      <li>If any frontend call is pending, stop. The browser runs the tool and starts a new run with the result. Otherwise go back to step 2, up to <code>maxTurns</code> turns.</li>
+      <li><code>RUN_FINISHED</code> with <code>outcome: {type:"success", pendingToolCallIds}</code>. Any exception produces <code>RUN_ERROR</code> instead.</li>
+    </ol>
+  </div>
+
+  <h2>What had to change</h2>
+  <p>Nothing was modified in Koog or AG-UI. All the work is additive and uses public Koog 1.3.0 APIs and the published <code>@ag-ui/client</code> 1.0.0. These are the points where the obvious approach did not work:</p>
+  <table>
+    <tr><th>Problem</th><th>Resolution</th></tr>
+    <tr><td><span class="tag t-big">design</span>Koog's <code>singleRunStrategy</code> tries to execute every tool call. For a browser-only tool it fails with "tool not found" and feeds that error back to the model.</td><td>Use our own <code>functionalStrategy</code> that owns the loop and stops at frontend calls. The Spring AI adapter does the same: it switches off Spring AI's tool execution.</td></tr>
+    <tr><td><span class="tag t-big">design</span>A Koog <code>Feature</code> can observe events but cannot stop the agent loop.</td><td>Use a strategy rather than a feature. Callers can still install features through <code>installFeatures</code>.</td></tr>
+    <tr><td><span class="tag t-big">design</span>The community Kotlin AG-UI SDK (0.4.1) lags spec 1.0. It fails on <code>reasoning</code> messages and on tools without <code>parameters</code>, and it rejects empty text deltas.</td><td>Write a small, lenient wire model of our own with kotlinx.serialization. Unknown roles decode to <code>UnknownMessage</code>.</td></tr>
+    <tr><td><span class="tag t-fix">gotcha</span>Koog streaming does not add the answer to the prompt history.</td><td>Build the assistant message from the translator and append it after each turn. Tool call ids match the ids the browser saw.</td></tr>
+    <tr><td><span class="tag t-fix">gotcha</span>Koog cannot accept a raw JSON Schema for a tool.</td><td>Add <code>JsonSchemaToolDescriptors</code>, which maps a JSON Schema onto <code>ToolParameterType</code>. It is modelled on Koog's MCP parser and handles <code>$ref</code>, enum, nullable types and nested objects.</td></tr>
+    <tr><td><span class="tag t-fix">gotcha</span>Koog flattens historical tool calls into plain text when the tool is not advertised.</td><td>Advertise the frontend tool descriptors on every request.</td></tr>
+    <tr><td><span class="tag t-fix">gotcha</span>The client's zod schemas reject <code>null</code> in optional fields.</td><td>Set <code>explicitNulls = false</code> so absent fields are omitted, and test it.</td></tr>
+    <tr><td><span class="tag t-fix">gotcha</span>Inside Koog's context, <code>config</code> refers to Koog's agent config and hides ours.</td><td>Capture our settings explicitly (<code>this@KoogAgUiAgent.config</code>).</td></tr>
+    <tr><td><span class="tag t-fix">env</span>pnpm 11 blocks esbuild's build script, which Vite and tsx need.</td><td>Add <code>allowBuilds: esbuild</code> to <code>pnpm-workspace.yaml</code>. The example server uses port <b>8787</b> by default (override with <code>PORT</code>).</td></tr>
+    <tr><td><span class="tag t-fix">bug</span>A React effect returned the Promise from <code>scrollIntoView</code> and crashed the app. The browser check caught it.</td><td>Give the effect a block body.</td></tr>
+  </table>
+
+  <h2>Biggest things</h2>
+  <div class="card">
+    <ul class="clean">
+      <li><b>The frontend-tool round trip works.</b> The model calls <code>change_background</code> or <code>generate_haiku</code>. The run ends with <code>pendingToolCallIds</code>. The browser renders the UI, sends the tool result and re-runs, and the model then confirms what it did.</li>
+      <li><b>Streaming maps 1:1.</b> Koog streams one segment at a time (text, reasoning, tool call), and each segment ends with a <code>*Complete</code> frame. That lines up with AG-UI's start/content/end events. The translator also covers providers that send only complete frames, calls without an id, and a tool name that arrives late.</li>
+      <li><b>Shared state</b> goes through an <code>update_state</code> tool. The UI sees it as a state snapshot, not a tool call.</li>
+      <li><b>Improvements over the Spring AI adapter:</b> <code>context</code> is passed to the model, turns that mix backend and frontend calls are handled, and the run reports <code>pendingToolCallIds</code>.</li>
+    </ul>
+  </div>
+
+  <h2>Review pass (keep it short)</h2>
+  <div class="card">
+    <ul class="clean">
+      <li><span class="tag t-trim">trim</span>Removed unused events (<code>STEP_*</code>, <code>STATE_DELTA</code>, <code>MESSAGES_SNAPSHOT</code>, <code>CUSTOM</code>) and the untested <code>emitSteps</code> option. They are follow-ups in the spec.</li>
+      <li><span class="tag t-trim">trim</span><code>KoogAgUiAgent</code> went from 223 to 183 lines. Removed a <code>state</code> variable that was written but never read, the <code>config</code>/<code>agUiConfig</code> alias and the <code>ProducerScope</code> receiver trick.</li>
+      <li><span class="tag t-trim">trim</span>Translator: the two duplicated tool-call branches became <code>startCall</code> and <code>PendingCall.continuedBy</code>.</li>
+      <li><span class="tag t-trim">trim</span>Ktor route: merged two catch blocks, because <code>SerializationException</code> is an <code>IllegalArgumentException</code>. Also removed redundant <code>@SerialName</code> annotations and unused imports.</li>
+      <li>Result: library code went from 1,014 to 934 lines. All 21 tests and all 5 live scenarios still pass.</li>
+    </ul>
+  </div>
+
+  <h2>Compared with other AG-UI adapters</h2>
+  <p>Reviewed against Spring AI (Java), LangGraph (Python), Mastra (TypeScript) and the Python server starter. Verdict: <b>on par, better in places, no structural hacks.</b></p>
+  <table>
+    <tr><th>Concern</th><th>Others</th><th>Koog adapter</th></tr>
+    <tr><td>Frontend tools</td><td>Spring uses placeholder callbacks and never sets <code>pendingToolCallIds</code>. Mastra passes the raw schema through.</td><td class="ok">better: descriptor-only tools, stop at the call, <code>pendingToolCallIds</code> per spec</td></tr>
+    <tr><td>Stream state machine</td><td>Spring can send args before the tool name is known.</td><td class="ok">better: late names, missing ids, complete-only frames</td></tr>
+    <tr><td>Shared state</td><td>Spring ends the turn after <code>update_state</code> and offers an optional <code>STATE_DELTA</code>.</td><td>equal: keeps looping so the model can still reply; <code>STATE_DELTA</code> is a follow-up</td></tr>
+    <tr><td>Context</td><td>Spring ignores it. LangGraph and Mastra pass it into agent state.</td><td>equal or better: sent as a system message</td></tr>
+    <tr><td>Transport</td><td>Same <code>data:</code> framing everywhere.</td><td>equal: also sends <code>Cache-Control</code> and <code>X-Accel-Buffering</code>; 400 on bad input</td></tr>
+    <tr><td>Attachments and history reasoning</td><td>LangGraph maps media; Spring replays reasoning.</td><td>behind: text placeholder; reasoning-role history dropped (follow-up)</td></tr>
+  </table>
+  <p>Fixed after the comparison:</p>
+  <ul class="clean">
+    <li>Reasoning, including provider signatures, is now kept in history within a run. Without this, reasoning models could fail on the second turn of a tool loop.</li>
+    <li>Parts are kept in arrival order, so text that follows a tool call is no longer moved in front of it.</li>
+    <li>Removed the magic <code>maxTurns*4+10</code>. Koog does not apply its iteration limit to functional strategies. Running out of turns now gives <code>RUN_ERROR</code> with code <code>max_turns</code> instead of a silent success.</li>
+    <li>Stable error codes <code>agent_error</code> and <code>max_turns</code> replace Java class names.</li>
+    <li><code>update_state</code> now requires a <code>state</code> object or array. Previously <code>{}</code> wiped the state.</li>
+    <li>The initial <code>STATE_SNAPSHOT</code> is sent only when the client sent state (same as Spring). Removed <code>isLenient</code>.</li>
+    <li>The example client takes the agent URL as a parameter instead of sniffing <code>process</code> or <code>import.meta</code>.</li>
+  </ul>
+
+  <h2>Verification</h2>
+  <table>
+    <tr><th>Layer</th><th>Covers</th><th>Result</th></tr>
+    <tr><td>Unit tests (<code>./gradlew build</code>)</td><td>Text streaming, the backend tool loop, frontend stop and replay, mixed turns, the state tool, context, errors, the turn cap, translator edge cases, schema conversion, the wire format and SSE framing</td><td class="ok">23 / 23</td></tr>
+    <tr><td>Live e2e (<code>pnpm e2e</code>, gpt-4.1-mini)</td><td>Streamed text, <code>get_weather</code> with its result, the <code>change_background</code> round trip, <code>generate_haiku</code>, and adding two todos through state</td><td class="ok">5 / 5</td></tr>
+    <tr><td>Browser</td><td>Weather card, haiku card, sunset background, todo panel</td><td class="ok">rendered</td></tr>
+  </table>
+
+  <h2>Screenshot</h2>
+  <img class="shot" src="demo.png" alt="Koog agent driving the web UI over AG-UI: haiku card, background change and the shared todo list">
+
+  <footer>AI-generated summary. Design detail is in <code>SPEC.md</code>; usage is in <code>README.md</code>.</footer>
+</main>
+</body>
+</html>
