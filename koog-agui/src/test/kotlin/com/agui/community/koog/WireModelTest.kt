@@ -240,6 +240,31 @@ class WireModelTest {
     }
 
     @Test
+    fun `tool message content must be a string or an array of parts`() {
+        assertEquals(JsonArray(emptyList()), ToolMessage("t", "c", JsonArray(emptyList())).content)
+        for (invalid in listOf(JsonPrimitive(5), JsonPrimitive(true), JsonNull, buildJsonObject { put("text", "x") })) {
+            assertFailsWith<IllegalArgumentException>("content $invalid") { ToolMessage("t", "c", invalid) }
+        }
+        for (content in listOf("5", "null", "{\"text\":\"x\"}")) {
+            assertFailsWith<IllegalArgumentException>("content $content") {
+                AgUiJson.decodeFromString(AgUiMessage.serializer(), """{"id":"t","role":"tool","toolCallId":"c","content":$content}""")
+            }
+        }
+    }
+
+    @Test
+    fun `textParts never throws on malformed content parts`() {
+        val parts = """[{"type":{"x":1}},{"type":"text","text":{"a":1}},7,{"type":"text","text":"ok"},{"no":"type"},{"type":"text"}]"""
+        val expected = listOf("[unknown attachment omitted]", "", "7", "ok", "[unknown attachment omitted]", "")
+        val tool = AgUiJson.decodeFromString(AgUiMessage.serializer(), """{"id":"t","role":"tool","toolCallId":"c","content":$parts}""")
+        val user = AgUiJson.decodeFromString(AgUiMessage.serializer(), """{"id":"u","role":"user","content":$parts}""")
+
+        assertEquals(expected, assertIs<ToolMessage>(tool).textParts())
+        assertEquals(expected, assertIs<UserMessage>(user).textParts())
+        assertEquals(listOf("{\"a\":1}"), UserMessage("u", buildJsonObject { put("a", 1) }).textParts())
+    }
+
+    @Test
     fun `decodes resume entries from a RunAgentInput`() {
         val input = AgUiJson.decodeFromString(
             RunAgentInput.serializer(),

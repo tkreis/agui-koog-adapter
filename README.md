@@ -48,8 +48,9 @@ The library is pre-release (`0.1.0-SNAPSHOT`); the wire-model extension in this 
 
 - Event and message constructors and `copy` gained trailing optional parameters (`timestamp`, `metadata`),
   so code compiled against an earlier commit must be recompiled. Positional arguments and `componentN` keep their order.
-- `ToolMessage.content` is now a `JsonElement` (string or content parts). `ToolMessage(id, toolCallId, "text")` still
-  compiles; read the text with `textParts()`.
+- `ToolMessage.content` is now a `JsonElement` that must be a string or an array of content parts.
+  `ToolMessage(id, toolCallId, "text")` still compiles; `copy(content = ...)` needs `JsonPrimitive("text")`, and the
+  text is read with `textParts()`.
 - New sealed subtypes: `RunOutcome.Interrupt`, `RunOutcome.Cancelled`, the events `CustomEvent`,
   `ActivitySnapshotEvent`, `MessagesSnapshotEvent`, and the messages `ActivityMessage`, `ReasoningMessage`.
   Exhaustive `when` expressions over `AgUiEvent`, `RunOutcome` or `AgUiMessage` need the new branches.

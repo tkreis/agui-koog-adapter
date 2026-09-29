@@ -16,7 +16,6 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * JSON configuration for the AG-UI wire format.
@@ -173,7 +172,10 @@ public data class AssistantMessage(
     override val metadata: JsonObject? = null,
 ) : AgUiMessage
 
-/** A tool result. [content] is either a JSON string or an array of content parts, like [UserMessage.content]. */
+/**
+ * A tool result. [content] is either a JSON string or an array of content parts; anything else is rejected,
+ * also when decoding, so a malformed tool message fails the request like other strict roles.
+ */
 @Serializable
 public data class ToolMessage(
     override val id: String,
@@ -191,6 +193,12 @@ public data class ToolMessage(
         role: String = "tool",
         metadata: JsonObject? = null,
     ) : this(id, toolCallId, JsonPrimitive(content), error, role, metadata)
+
+    init {
+        require(content is JsonArray || (content is JsonPrimitive && content.isString)) {
+            "tool message content must be a string or an array of content parts, was $content"
+        }
+    }
 }
 
 /**
@@ -282,18 +290,19 @@ internal object AgUiMessageSerializer : KSerializer<AgUiMessage> {
     private fun JsonObject.string(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 }
 
-/** Text of each user content part; non-text parts are replaced by a short placeholder. */
+/** Text of each user content part; non-text parts are replaced by a short placeholder. Never throws. */
 public fun UserMessage.textParts(): List<String> = content.textParts()
 
-/** Text of each tool result content part; non-text parts are replaced by a short placeholder. */
+/** Text of each tool result content part; non-text parts are replaced by a short placeholder. Never throws. */
 public fun ToolMessage.textParts(): List<String> = content.textParts()
 
+/** Total over any JSON: malformed parts become their JSON text, a placeholder, or an empty string. */
 private fun JsonElement.textParts(): List<String> = when (this) {
     is JsonPrimitive -> listOf(contentOrNull.orEmpty())
     is JsonArray -> map { part ->
         val obj = part as? JsonObject ?: return@map part.toString()
-        when (val type = obj["type"]?.jsonPrimitive?.contentOrNull) {
-            "text" -> obj["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        when (val type = (obj["type"] as? JsonPrimitive)?.contentOrNull) {
+            "text" -> (obj["text"] as? JsonPrimitive)?.contentOrNull.orEmpty()
             else -> "[${type ?: "unknown"} attachment omitted]"
         }
     }
