@@ -53,7 +53,7 @@ class WireModelTest {
 
     /** One instance of every event with every optional field set. */
     private val fullEvents = listOf(
-        RunStartedEvent("t", "r", parentRunId = "p", timestamp = 1L, metadata = meta),
+        RunStartedEvent("t", "r", parentRunId = "p", protocolVersion = PROTOCOL_VERSION, timestamp = 1L, metadata = meta),
         RunFinishedEvent("t", "r", result = JsonArray(listOf(JsonPrimitive(1))), outcome = RunOutcome.Interrupt(listOf(interrupt)), timestamp = 2L, metadata = meta),
         RunFinishedEvent("t", "r", outcome = RunOutcome.Success(listOf("c")), timestamp = 3L, metadata = meta),
         RunFinishedEvent("t", "r", outcome = RunOutcome.Cancelled, timestamp = 4L, metadata = meta),
@@ -262,6 +262,17 @@ class WireModelTest {
         assertEquals(expected, assertIs<ToolMessage>(tool).textParts())
         assertEquals(expected, assertIs<UserMessage>(user).textParts())
         assertEquals(listOf("{\"a\":1}"), UserMessage("u", buildJsonObject { put("a", 1) }).textParts())
+    }
+
+    @Test
+    fun `RUN_STARTED declares the protocol version and RunAgentInput carries the consumer's`() {
+        assertEquals(
+            """{"type":"RUN_STARTED","threadId":"t","runId":"r","protocolVersion":"1.0"}""",
+            encode(RunStartedEvent("t", "r", protocolVersion = PROTOCOL_VERSION)),
+        )
+        val input = AgUiJson.decodeFromString(RunAgentInput.serializer(), """{"threadId":"t","runId":"r","protocolVersion":"1.0"}""")
+        assertEquals("1.0", input.protocolVersion)
+        assertFalse("protocolVersion" in AgUiJson.encodeToString(RunAgentInput.serializer(), RunAgentInput("t", "r")))
     }
 
     @Test

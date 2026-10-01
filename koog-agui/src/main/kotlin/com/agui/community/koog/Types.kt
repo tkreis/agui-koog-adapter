@@ -30,11 +30,15 @@ public val AgUiJson: Json = Json {
     encodeDefaults = true
 }
 
+/** The AG-UI protocol version this library speaks. */
+public const val PROTOCOL_VERSION: String = "1.0"
+
 /**
  * Body of an AG-UI run request.
  *
  * @property resume answers to the interrupts that ended a previous run ([RunOutcome.Interrupt]), when this
  *   run continues from one.
+ * @property protocolVersion the protocol version the consumer speaks.
  */
 @Serializable
 public data class RunAgentInput(
@@ -47,6 +51,7 @@ public data class RunAgentInput(
     val forwardedProps: JsonElement? = null,
     val parentRunId: String? = null,
     val resume: List<ResumeEntry> = emptyList(),
+    val protocolVersion: String? = null,
 )
 
 /**

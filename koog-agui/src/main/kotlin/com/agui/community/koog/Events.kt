@@ -36,6 +36,8 @@ public data class RunStartedEvent(
     val threadId: String,
     val runId: String,
     val parentRunId: String? = null,
+    /** The protocol version the producer speaks; a 1.0 producer declares [PROTOCOL_VERSION]. */
+    val protocolVersion: String? = null,
     override val timestamp: Long? = null,
     override val metadata: JsonObject? = null,
 ) : AgUiEvent {

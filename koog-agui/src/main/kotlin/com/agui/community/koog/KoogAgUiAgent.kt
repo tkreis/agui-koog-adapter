@@ -74,7 +74,7 @@ public class KoogAgUiAgent(
 
     /** Streams the AG-UI events for [input]. Collection cancels with the caller (e.g. client disconnect). */
     public fun run(input: RunAgentInput): Flow<AgUiEvent> = channelFlow {
-        send(RunStartedEvent(input.threadId, input.runId, input.parentRunId))
+        send(RunStartedEvent(input.threadId, input.runId, input.parentRunId, protocolVersion = PROTOCOL_VERSION))
         try {
             val inputState = input.state?.takeUnless { it is JsonNull }
             if (config.shareState && inputState != null) send(StateSnapshotEvent(inputState))

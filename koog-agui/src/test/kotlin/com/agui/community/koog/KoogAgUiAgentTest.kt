@@ -49,7 +49,7 @@ class KoogAgUiAgentTest {
         assertValidAgUiSequence(events)
         assertEquals(
             listOf(
-                RunStartedEvent("t1", "r1"),
+                RunStartedEvent("t1", "r1", protocolVersion = PROTOCOL_VERSION),
                 TextMessageStartEvent("id-1"),
                 TextMessageContentEvent("id-1", "Hel"),
                 TextMessageContentEvent("id-1", "lo"),
